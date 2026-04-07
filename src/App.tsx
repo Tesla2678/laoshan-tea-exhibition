@@ -12,7 +12,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { siteConfig, MODEL_OPTIONS } from './site-config';
+import { siteConfig, FUNCTIONS } from './site-config';
 
 function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }
 
@@ -20,6 +20,7 @@ declare global { interface Window {
   __SECRET_ID__: string; __SECRET_KEY__: string;
   __GOOGLE_API_KEY__: string; __BACKEND_PORT__: string; __FRONTEND_PORT__: string;
 }}
+
 const env = {
   siteTitle: siteConfig.siteTitle,
   siteSubtitle: siteConfig.siteSubtitle,
@@ -29,10 +30,10 @@ const env = {
   googleApiKey: window.__GOOGLE_API_KEY__ || '',
 };
 
-// --- Types ---
+type FuncKey = keyof typeof FUNCTIONS;
+
 interface DesignResult { imageUrl: string; explanation: string; }
 interface RefImage { id: string; image: string; name: string; }
-type Provider = 'hunyuan' | 'google';
 
 // --- 可命名图片卡 ---
 const NamedImageCard = ({ img, idx, onRename, onRemove }: { img: RefImage; idx: number; onRename: (id: string, name: string) => void; onRemove: (id: string) => void }) => {
@@ -153,31 +154,19 @@ const BrushCanvas = ({ imageUrl, onSaveMask, onCancel }: { imageUrl: string; onS
   );
 };
 
-// --- 每个功能的模型选择行 ---
-const ModelSelectRow = ({ label, value, options, onChange }: { label: string; value: string; options: { value: string; label: string }[]; onChange: (v: string) => void }) => (
-  <div className="flex items-center gap-3">
-    <span className="text-[10px] uppercase tracking-widest font-bold text-stone-400 w-28 flex-shrink-0">{label}</span>
-    <select value={value} onChange={(e) => onChange(e.target.value)}
-      className="flex-1 px-3 py-2 rounded-xl bg-stone-50 border border-stone-200 text-xs font-mono outline-none focus:border-stone-400">
-      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
-  </div>
-);
-
 // --- 主应用 ---
 export default function App() {
   const [showSettings, setShowSettings] = useState(false);
-  const [provider, setProvider] = useState<Provider>('hunyuan');
   const [secretId, setSecretId] = useState(env.secretId);
   const [secretKey, setSecretKey] = useState(env.secretKey);
   const [googleApiKey, setGoogleApiKey] = useState(env.googleApiKey);
 
-  // 4 个功能的模型
-  const [models, setModels] = useState({
-    textToImage: MODEL_OPTIONS.hunyuan.models.textToImage[0].value,
-    think: MODEL_OPTIONS.hunyuan.models.think[0].value,
-    consultant: MODEL_OPTIONS.hunyuan.models.consultant[0].value,
-    reedit: MODEL_OPTIONS.hunyuan.models.reedit[0].value,
+  // 每个功能独立选模型
+  const [modelMap, setModelMap] = useState<Record<FuncKey, string>>({
+    textToImage: FUNCTIONS.textToImage.default,
+    think: FUNCTIONS.think.default,
+    consultant: FUNCTIONS.consultant.default,
+    reedit: FUNCTIONS.reedit.default,
   });
 
   const [refImages, setRefImages] = useState<RefImage[]>([]);
@@ -192,17 +181,12 @@ export default function App() {
   const [maskBase64, setMaskBase64] = useState<string | null>(null);
   const [editPrompt, setEditPrompt] = useState('');
 
-  // 思考阶段
   const [thinkingPhase, setThinkingPhase] = useState(false);
   const [optimizedPrompt, setOptimizedPrompt] = useState('');
   const [optimizedExplanation, setOptimizedExplanation] = useState('');
   const [isFinalGenerating, setIsFinalGenerating] = useState(false);
 
-  const modelOpts = MODEL_OPTIONS[provider];
-
-  const updateModel = (func: keyof typeof models, v: string) => {
-    setModels(prev => ({ ...prev, [func]: v }));
-  };
+  const updateModel = (func: FuncKey, v: string) => setModelMap(prev => ({ ...prev, [func]: v }));
 
   const addImages = useCallback((files: File[]) => {
     files.forEach(file => {
@@ -226,6 +210,19 @@ export default function App() {
     setRefImages(prev => prev.filter(img => img.id !== id));
   }, []);
 
+  const callGenerate = async (func: FuncKey, extra: Record<string, any> = {}) => {
+    const model = modelMap[func];
+    const res = await fetch('/api/generate', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ func, model, secretId, secretKey, apiKey: googleApiKey, ...extra })
+    });
+    if (!res.ok) {
+      const e = await res.json().catch(() => ({}));
+      throw new Error(e.error?.message || `请求失败 (${res.status})`);
+    }
+    return res.json();
+  };
+
   // Step 1: 思考
   const handleStartThinking = async () => {
     if (refImages.length < 1) return;
@@ -233,52 +230,32 @@ export default function App() {
     setError(null); setOptimizedPrompt(''); setOptimizedExplanation('');
 
     try {
-      const res = await fetch('/api/think', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: consultantPrompt,
-          image_list: refImages.map(img => img.image),
-          image_names: refImages.map(img => img.name),
-          provider,
-          secretId, secretKey,
-          apiKey: googleApiKey,
-          thinkModel: models.think,
-          consultantModel: models.consultant,
-        })
+      const data = await callGenerate('think', {
+        prompt: consultantPrompt,
+        image_list: refImages.map(img => img.image),
+        image_names: refImages.map(img => img.name),
       });
-      if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error?.message || `失败 (${res.status})`); }
-      const data = await res.json();
       setOptimizedPrompt(data.optimizedPrompt || consultantPrompt);
       setOptimizedExplanation(data.explanation || '');
     } catch (err: any) { setError(err.message); setThinkingPhase(false); }
     finally { setIsGenerating(false); }
   };
 
-  // Step 2: 生图（consultant）
+  // Step 2: 生图
   const handleConfirmGenerate = async () => {
     if (!optimizedPrompt) return;
     setIsFinalGenerating(true); setThinkingPhase(false);
     setError(null); setResult(null); setIsBrushMode(false); setMaskBase64(null);
 
     try {
-      if (provider === 'hunyuan') {
-        if (!secretId || !secretKey) { setShowSettings(true); throw new Error("请先设置 SecretId"); }
-        const res = await fetch('/api/hunyuan/consultant', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ secretId, secretKey, model: models.consultant, prompt: optimizedPrompt, size: "1024:1024", image_list: refImages.map(img => img.image) }) });
-        if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error?.message || `失败 (${res.status})`); }
-        const data = await res.json();
-        const imageUrl = data.data?.[0]?.url || (data.data?.[0]?.b64_json ? `data:image/png;base64,${data.data[0].b64_json}` : null);
-        if (!imageUrl) throw new Error("未返回有效图像");
-        setResult({ imageUrl, explanation: optimizedExplanation || data.data?.[0]?.revised_prompt || "生成成功。" });
-      } else {
-        if (!googleApiKey) { setShowSettings(true); throw new Error("请先设置 Google API Key"); }
-        const res = await fetch('/api/google/consultant', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ apiKey: googleApiKey, model: models.consultant, prompt: optimizedPrompt, image_list: refImages.map(img => img.image), size: imageSize }) });
-        if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error?.message || `失败 (${res.status})`); }
-        const data = await res.json();
-        if (!data.data?.[0]?.url) throw new Error("未返回有效图像");
-        setResult({ imageUrl: data.data[0].url, explanation: optimizedExplanation || data.data[0].revised_prompt || "生成成功。" });
-      }
+      const data = await callGenerate('consultant', {
+        prompt: optimizedPrompt,
+        image_list: refImages.map(img => img.image),
+        size: imageSize,
+      });
+      const imageUrl = data.data?.[0]?.url || (data.data?.[0]?.b64_json ? `data:image/png;base64,${data.data[0].b64_json}` : null);
+      if (!imageUrl) throw new Error("未返回有效图像");
+      setResult({ imageUrl, explanation: optimizedExplanation || data.data?.[0]?.revised_prompt || "生成成功。" });
     } catch (err: any) { setError(err.message); }
     finally { setIsFinalGenerating(false); }
   };
@@ -288,23 +265,15 @@ export default function App() {
     if (!result || !maskBase64 || !editPrompt) return;
     setIsFinalGenerating(true); setError(null);
     try {
-      if (provider === 'hunyuan') {
-        if (!secretId || !secretKey) { setShowSettings(true); throw new Error("请先设置 SecretId"); }
-        const res = await fetch('/api/hunyuan/reedit', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ secretId, secretKey, model: models.reedit, prompt: editPrompt, size: "1024:1024", image_list: [result.imageUrl, maskBase64] }) });
-        if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error?.message || `失败 (${res.status})`); }
-        const data = await res.json();
-        if (!data.data?.[0]?.url) throw new Error("未返回有效图像");
-        setResult({ ...result, imageUrl: data.data[0].url });
-      } else {
-        if (!googleApiKey) { setShowSettings(true); throw new Error("请先设置 Google API Key"); }
-        const res = await fetch('/api/google/reedit', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ apiKey: googleApiKey, model: models.reedit, prompt: editPrompt, image_list: [result.imageUrl], maskImage: maskBase64, size: imageSize }) });
-        if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error?.message || `失败 (${res.status})`); }
-        const data = await res.json();
-        if (!data.data?.[0]?.url) throw new Error("未返回有效图像");
-        setResult({ ...result, imageUrl: data.data[0].url });
-      }
+      const data = await callGenerate('reedit', {
+        prompt: editPrompt,
+        image_list: [result.imageUrl],
+        maskImage: maskBase64,
+        size: imageSize,
+      });
+      const imageUrl = data.data?.[0]?.url;
+      if (!imageUrl) throw new Error("未返回有效图像");
+      setResult({ ...result, imageUrl });
       setIsBrushMode(false); setMaskBase64(null); setEditPrompt('');
     } catch (err: any) { setError(err.message); }
     finally { setIsFinalGenerating(false); }
@@ -315,23 +284,13 @@ export default function App() {
     if (!prompt) return;
     setIsGenerating(true); setError(null);
     try {
-      if (provider === 'hunyuan') {
-        if (!secretId || !secretKey) { setShowSettings(true); throw new Error("请先设置 SecretId"); }
-        const res = await fetch('/api/hunyuan/t2i', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ secretId, secretKey, model: models.textToImage, prompt: `设计一个位于大型展馆内的崂山茶文化展位：${prompt}。风格要求：自然、质朴、山海气息，专业展陈效果图，灯光层次丰富。`, size: "1024:1024" }) });
-        if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error?.message || `失败 (${res.status})`); }
-        const data = await res.json();
-        if (!data.data?.[0]?.url) throw new Error("未返回有效图像");
-        setResult({ imageUrl: data.data[0].url, explanation: `基于您的灵感："${prompt}" 生成的崂山茶空间构想。` });
-      } else {
-        if (!googleApiKey) { setShowSettings(true); throw new Error("请先设置 Google API Key"); }
-        const res = await fetch('/api/google/t2i', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ apiKey: googleApiKey, model: models.textToImage, prompt, size: imageSize }) });
-        if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error?.message || `失败 (${res.status})`); }
-        const data = await res.json();
-        if (!data.data?.[0]?.url) throw new Error("未返回有效图像");
-        setResult({ imageUrl: data.data[0].url, explanation: `基于您的灵感："${prompt}" 生成的崂山茶空间构想。` });
-      }
+      const data = await callGenerate('textToImage', {
+        prompt: `设计一个位于大型展馆内的崂山茶文化展位：${prompt}。风格要求：自然、质朴、山海气息，专业展陈效果图，灯光层次丰富。`,
+        size: imageSize,
+      });
+      const imageUrl = data.data?.[0]?.url || (data.data?.[0]?.b64_json ? `data:image/png;base64,${data.data[0].b64_json}` : null);
+      if (!imageUrl) throw new Error("未返回有效图像");
+      setResult({ imageUrl, explanation: `基于您的灵感："${prompt}" 生成的崂山茶空间构想。` });
     } catch (err: any) { setError(err.message); }
     finally { setIsGenerating(false); }
   };
@@ -394,7 +353,6 @@ export default function App() {
                       className="w-full h-40 p-4 rounded-2xl bg-white border border-stone-200 focus:border-stone-400 transition-all resize-none text-sm leading-relaxed" />
                   </div>
 
-                  {/* 阶段1 */}
                   {!thinkingPhase && !result && (
                     <button onClick={handleStartThinking} disabled={refImages.length < 1 || isGenerating}
                       className={cn("w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all",
@@ -405,7 +363,6 @@ export default function App() {
                     </button>
                   )}
 
-                  {/* 阶段2: 思考中 */}
                   {thinkingPhase && !result && (
                     <div className="space-y-3">
                       <div className="p-4 rounded-2xl bg-amber-50 border border-amber-100 flex items-center gap-3">
@@ -418,7 +375,6 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* 阶段3: 显示优化结果 */}
                   {thinkingPhase && optimizedPrompt && !result && (
                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
                       {optimizedExplanation && (
@@ -589,12 +545,12 @@ export default function App() {
         {showSettings && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              onClick={() => saveConfig()} className="absolute inset-0 bg-stone-900/40 backdrop-blur-sm" />
+              onClick={saveConfig} className="absolute inset-0 bg-stone-900/40 backdrop-blur-sm" />
             <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
               className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
               <div className="p-6 border-b border-stone-100 flex items-center justify-between sticky top-0 bg-white z-10">
                 <h2 className="text-lg font-bold flex items-center gap-2"><Settings className="w-5 h-5 text-stone-600" /> API 配置</h2>
-                <button onClick={() => saveConfig()} className="p-2 hover:bg-stone-100 rounded-full"><X className="w-5 h-5 text-stone-400" /></button>
+                <button onClick={saveConfig} className="p-2 hover:bg-stone-100 rounded-full"><X className="w-5 h-5 text-stone-400" /></button>
               </div>
 
               <div className="p-6 space-y-6">
@@ -604,111 +560,46 @@ export default function App() {
                   <div className="flex justify-between"><span className="text-stone-500">LAN:</span><span className="font-mono text-stone-700">{frontUrl}</span></div>
                 </div>
 
-                {/* 模型提供商切换 */}
+                {/* 密钥 */}
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5"><label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">腾讯 SecretId</label>
+                    <input type="text" value={secretId} onChange={(e) => setSecretId(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl bg-stone-50 border border-stone-200 focus:border-stone-400 outline-none text-sm font-mono" /></div>
+                  <div className="space-y-1.5"><label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">腾讯 SecretKey</label>
+                    <input type="password" value={secretKey} onChange={(e) => setSecretKey(e.target.value)}
+                      className="w-full px-4 py-2.5 rounded-xl bg-stone-50 border border-stone-200 focus:border-stone-400 outline-none text-sm font-mono" /></div>
+                </div>
                 <div className="space-y-1.5">
-                  <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">模型提供商</label>
-                  <div className="flex gap-3">
-                    {(['hunyuan', 'google'] as Provider[]).map(p => (
-                      <button key={p} onClick={() => {
-                        setProvider(p);
-                        const opts = MODEL_OPTIONS[p];
-                        setModels({
-                          textToImage: opts.models.textToImage[0].value,
-                          think: opts.models.think[0].value,
-                          consultant: opts.models.consultant[0].value,
-                          reedit: opts.models.reedit[0].value,
-                        });
-                      }}
-                        className={cn("flex-1 py-3 rounded-xl text-sm font-bold border transition-all",
-                          provider === p ? "bg-stone-900 text-white border-stone-900" : "bg-white text-stone-500 border-stone-200 hover:border-stone-400")}>
-                        {MODEL_OPTIONS[p].label}
-                      </button>
-                    ))}
-                  </div>
+                  <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">Google API Key</label>
+                  <input type="password" value={googleApiKey} onChange={(e) => setGoogleApiKey(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl bg-stone-50 border border-stone-200 focus:border-stone-400 outline-none text-sm font-mono" />
                 </div>
 
-                {/* 密钥 */}
-                {provider === 'hunyuan' ? (
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-1.5"><label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">SecretId</label>
-                      <input type="text" value={secretId} onChange={(e) => setSecretId(e.target.value)}
-                        className="w-full px-4 py-2.5 rounded-xl bg-stone-50 border border-stone-200 focus:border-stone-400 outline-none text-sm font-mono" /></div>
-                    <div className="space-y-1.5"><label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">SecretKey</label>
-                      <input type="password" value={secretKey} onChange={(e) => setSecretKey(e.target.value)}
-                        className="w-full px-4 py-2.5 rounded-xl bg-stone-50 border border-stone-200 focus:border-stone-400 outline-none text-sm font-mono" /></div>
-                  </div>
-                ) : (
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">Google API Key</label>
-                    <input type="password" value={googleApiKey} onChange={(e) => setGoogleApiKey(e.target.value)}
-                      className="w-full px-4 py-2.5 rounded-xl bg-stone-50 border border-stone-200 focus:border-stone-400 outline-none text-sm font-mono" />
-                  </div>
-                )}
-
-                {/* 4 个功能各自选模型 */}
+                {/* 4 个功能独立选模型 */}
                 <div className="border-t border-stone-100 pt-4 space-y-3">
-                  <p className="text-[10px] uppercase tracking-widest font-bold text-stone-400">各功能模型配置</p>
-
-                  <div className="bg-white rounded-2xl border border-stone-200 divide-y divide-stone-100 overflow-hidden">
-                    {/* 文生图 */}
-                    <div className="p-3 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Wand2 className="w-4 h-4 text-stone-400" />
-                        <span className="text-xs font-bold text-stone-700">文生图</span>
-                        <span className="text-[10px] text-stone-400 ml-auto">{provider === 'google' ? 'Google Gemini' : 'Tencent Hunyuan'}</span>
+                  <p className="text-[10px] uppercase tracking-widest font-bold text-stone-400">各功能模型（可自由混搭 Hunyuan / Gemini）</p>
+                  <div className="space-y-2">
+                    {(Object.entries(FUNCTIONS) as [FuncKey, typeof FUNCTIONS[FuncKey]][]).map(([funcKey, funcDef]) => (
+                      <div key={funcKey} className="flex items-center gap-3">
+                        <div className="w-48 flex-shrink-0">
+                          <div className="flex items-center gap-1.5 mb-1">
+                            {funcKey === 'textToImage' && <Wand2 className="w-3.5 h-3.5 text-stone-400" />}
+                            {funcKey === 'think' && <Brain className="w-3.5 h-3.5 text-stone-400" />}
+                            {funcKey === 'consultant' && <Sparkles className="w-3.5 h-3.5 text-stone-400" />}
+                            {funcKey === 'reedit' && <RefreshCw className="w-3.5 h-3.5 text-stone-400" />}
+                            <span className="text-xs font-bold text-stone-700">{funcDef.label}</span>
+                          </div>
+                        </div>
+                        <select value={modelMap[funcKey]} onChange={(e) => updateModel(funcKey, e.target.value)}
+                          className="flex-1 px-3 py-2 rounded-xl bg-stone-50 border border-stone-200 text-xs font-mono outline-none focus:border-stone-400">
+                          {funcDef.models.map(m => (
+                            <option key={m.value} value={m.value}>
+                              {m.label} ({m.provider === 'hunyuan' ? 'Hunyuan' : 'Gemini'})
+                            </option>
+                          ))}
+                        </select>
                       </div>
-                      <ModelSelectRow
-                        label=""
-                        value={models.textToImage}
-                        options={modelOpts.models.textToImage}
-                        onChange={(v) => updateModel('textToImage', v)}
-                      />
-                    </div>
-
-                    {/* 多图理解 */}
-                    <div className="p-3 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Brain className="w-4 h-4 text-stone-400" />
-                        <span className="text-xs font-bold text-stone-700">多图理解 + Prompt 优化</span>
-                        <span className="text-[10px] text-stone-400 ml-auto">{provider === 'google' ? 'Google Gemini' : 'Tencent Hunyuan'}</span>
-                      </div>
-                      <ModelSelectRow
-                        label=""
-                        value={models.think}
-                        options={modelOpts.models.think}
-                        onChange={(v) => updateModel('think', v)}
-                      />
-                    </div>
-
-                    {/* 多图参考生图 */}
-                    <div className="p-3 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Sparkles className="w-4 h-4 text-stone-400" />
-                        <span className="text-xs font-bold text-stone-700">多图参考生图（展陈顾问）</span>
-                        <span className="text-[10px] text-stone-400 ml-auto">{provider === 'google' ? 'Google Gemini' : 'Tencent Hunyuan'}</span>
-                      </div>
-                      <ModelSelectRow
-                        label=""
-                        value={models.consultant}
-                        options={modelOpts.models.consultant}
-                        onChange={(v) => updateModel('consultant', v)}
-                      />
-                    </div>
-
-                    {/* Mask 编辑 */}
-                    <div className="p-3 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <RefreshCw className="w-4 h-4 text-stone-400" />
-                        <span className="text-xs font-bold text-stone-700">Mask 局部编辑</span>
-                        <span className="text-[10px] text-stone-400 ml-auto">{provider === 'google' ? 'Google Gemini' : 'Tencent Hunyuan'}</span>
-                      </div>
-                      <ModelSelectRow
-                        label=""
-                        value={models.reedit}
-                        options={modelOpts.models.reedit}
-                        onChange={(v) => updateModel('reedit', v)}
-                      />
-                    </div>
+                    ))}
                   </div>
                 </div>
 
