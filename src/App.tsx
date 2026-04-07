@@ -174,10 +174,10 @@ export default function App() {
 
   // 4 个功能的模型
   const [models, setModels] = useState({
-    textToImage: MODEL_OPTIONS.hunyuan.defaultModels.textToImage,
-    think: MODEL_OPTIONS.hunyuan.defaultModels.think,
-    consultant: MODEL_OPTIONS.hunyuan.defaultModels.consultant,
-    reedit: MODEL_OPTIONS.hunyuan.defaultModels.reedit,
+    textToImage: MODEL_OPTIONS.hunyuan.models.textToImage[0].value,
+    think: MODEL_OPTIONS.hunyuan.models.think[0].value,
+    consultant: MODEL_OPTIONS.hunyuan.models.consultant[0].value,
+    reedit: MODEL_OPTIONS.hunyuan.models.reedit[0].value,
   });
 
   const [refImages, setRefImages] = useState<RefImage[]>([]);
@@ -611,11 +611,12 @@ export default function App() {
                     {(['hunyuan', 'google'] as Provider[]).map(p => (
                       <button key={p} onClick={() => {
                         setProvider(p);
+                        const opts = MODEL_OPTIONS[p];
                         setModels({
-                          textToImage: MODEL_OPTIONS[p].defaultModels.textToImage,
-                          think: MODEL_OPTIONS[p].defaultModels.think,
-                          consultant: MODEL_OPTIONS[p].defaultModels.consultant,
-                          reedit: MODEL_OPTIONS[p].defaultModels.reedit,
+                          textToImage: opts.models.textToImage[0].value,
+                          think: opts.models.think[0].value,
+                          consultant: opts.models.consultant[0].value,
+                          reedit: opts.models.reedit[0].value,
                         });
                       }}
                         className={cn("flex-1 py-3 rounded-xl text-sm font-bold border transition-all",
