@@ -3,11 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { 
   Upload, Image as ImageIcon, Sparkles, Loader2, Info,
-  Maximize2, RefreshCw, Palette, Settings, X, Brain
+  RefreshCw, Palette, Settings, X, Brain, Plus, Trash2, Pencil, Check
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
@@ -31,33 +31,89 @@ const env = {
 };
 
 interface DesignResult { imageUrl: string; explanation: string; }
+interface RefImage { id: string; image: string; name: string; }
 
-// --- 图片上传 ---
-const ImageUpload = ({ label, image, onUpload, icon: Icon }: { label: string; image: string | null; onUpload: (b64: string) => void; icon: any }) => {
-  const onDrop = useCallback((files: File[]) => {
-    const r = new FileReader();
-    r.onload = () => onUpload(r.result as string);
-    r.readAsDataURL(files[0]);
-  }, [onUpload]);
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop, accept: { 'image/*': [] }, multiple: false } as any);
+// --- 单张可命名图片卡 ---
+const NamedImageCard = ({
+  img, onUpdateName, onRemove, idx
+}: {
+  img: RefImage;
+  onUpdateName: (id: string, name: string) => void;
+  onRemove: (id: string) => void;
+  idx: number;
+}) => {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(img.name);
+
+  const commit = () => {
+    onUpdateName(img.id, name || `图片${idx + 1}`);
+    setEditing(false);
+  };
+
   return (
-    <div {...getRootProps()} className={cn("relative aspect-video rounded-2xl border-2 border-dashed transition-all duration-300 cursor-pointer overflow-hidden group",
-      isDragActive ? "border-emerald-500 bg-emerald-50/50" : "border-stone-200 hover:border-stone-400 bg-stone-50/50", image && "border-none")}>
-      <input {...getInputProps()} />
-      {image ? (
-        <>
-          <img src={image} alt={label} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center">
-            <p className="text-white text-sm font-medium flex items-center gap-2"><RefreshCw className="w-4 h-4" /> 重新上传</p>
+    <div className="relative group rounded-2xl overflow-hidden bg-white border border-stone-200 shadow-sm hover:shadow-md transition-all">
+      <img src={img.image} alt={img.name} className="w-full aspect-video object-cover" referrerPolicy="no-referrer" />
+      
+      {/* 序号标签 */}
+      <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-black/60 text-white text-[10px] font-bold">
+        #{idx + 1}
+      </div>
+
+      {/* 名称编辑 */}
+      <div className="p-2 border-t border-stone-100">
+        {editing ? (
+          <div className="flex items-center gap-1">
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setName(img.name); setEditing(false); } }}
+              className="flex-1 px-2 py-1 text-xs rounded bg-stone-50 border border-stone-200 outline-none focus:border-stone-400 font-mono"
+              autoFocus
+            />
+            <button onClick={commit} className="p-1 rounded bg-emerald-500 text-white hover:bg-emerald-600"><Check className="w-3 h-3" /></button>
           </div>
-        </>
-      ) : (
-        <div className="flex flex-col items-center justify-center h-full p-6 text-center">
-          <div className="w-12 h-12 rounded-full bg-stone-100 flex items-center justify-center mb-4 group-hover:scale-110 transition-transform"><Icon className="w-6 h-6 text-stone-500" /></div>
-          <p className="text-sm font-medium text-stone-700">{label}</p>
-          <p className="text-xs text-stone-400 mt-1">点击或拖拽图片至此</p>
-        </div>
+        ) : (
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-medium text-stone-600 truncate flex-1">{img.name}</span>
+            <div className="flex gap-1 ml-1">
+              <button onClick={() => setEditing(true)} className="p-1 rounded hover:bg-stone-100 text-stone-400 hover:text-stone-600">
+                <Pencil className="w-3 h-3" />
+              </button>
+              <button onClick={() => onRemove(img.id)} className="p-1 rounded hover:bg-red-50 text-stone-400 hover:text-red-500">
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// --- 拖拽上传区域 ---
+const DropZone = ({ onFiles }: { onFiles: (files: File[]) => void }) => {
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop: onFiles,
+    accept: { 'image/*': [] },
+    multiple: true
+  } as any);
+
+  return (
+    <div {...getRootProps()}
+      className={cn("border-2 border-dashed rounded-2xl transition-all duration-300 cursor-pointer flex flex-col items-center justify-center gap-3 py-8",
+        isDragActive ? "border-emerald-400 bg-emerald-50" : "border-stone-200 hover:border-stone-400 bg-stone-50/50"
       )}
+    >
+      <input {...getInputProps()} />
+      <div className={cn("w-12 h-12 rounded-full flex items-center justify-center transition-colors",
+        isDragActive ? "bg-emerald-100" : "bg-stone-100"
+      )}>
+        <Plus className={cn("w-6 h-6 transition-colors", isDragActive ? "text-emerald-500" : "text-stone-400")} />
+      </div>
+      <div className="text-center">
+        <p className="text-sm font-medium text-stone-600">点击或拖拽上传参考图</p>
+        <p className="text-xs text-stone-400 mt-1">支持多张图片，点击每张图片可命名</p>
+      </div>
     </div>
   );
 };
@@ -143,8 +199,8 @@ export default function App() {
     googleApiKey: env.googleApiKey,
   });
 
-  const [spaceImage, setSpaceImage] = useState<string | null>(null);
-  const [libraryImage, setLibraryImage] = useState<string | null>(null);
+  // 动态参考图列表
+  const [refImages, setRefImages] = useState<RefImage[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [result, setResult] = useState<DesignResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -156,7 +212,7 @@ export default function App() {
   const [maskBase64, setMaskBase64] = useState<string | null>(null);
   const [editPrompt, setEditPrompt] = useState('');
 
-  // 思考阶段状态
+  // 思考阶段
   const [thinkingPhase, setThinkingPhase] = useState(false);
   const [optimizedPrompt, setOptimizedPrompt] = useState('');
   const [optimizedExplanation, setOptimizedExplanation] = useState('');
@@ -164,9 +220,32 @@ export default function App() {
 
   const saveConfig = (cfg: typeof config) => { setConfig(cfg); setShowSettings(false); };
 
-  // --- Step 1: 多图理解 + 优化 Prompt ---
+  // 添加图片
+  const addImages = useCallback((files: File[]) => {
+    files.forEach((file) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setRefImages(prev => [...prev, {
+          id: `img-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          image: reader.result as string,
+          name: file.name.replace(/\.[^.]+$/, '')
+        }]);
+      };
+      reader.readAsDataURL(file);
+    });
+  }, []);
+
+  const updateImageName = useCallback((id: string, name: string) => {
+    setRefImages(prev => prev.map(img => img.id === id ? { ...img, name } : img));
+  }, []);
+
+  const removeImage = useCallback((id: string) => {
+    setRefImages(prev => prev.filter(img => img.id !== id));
+  }, []);
+
+  // Step 1: 多图理解
   const handleStartThinking = async () => {
-    if (!spaceImage || !libraryImage) return;
+    if (refImages.length < 1) return;
     setIsGenerating(true); setThinkingPhase(true);
     setError(null); setOptimizedPrompt(''); setOptimizedExplanation('');
 
@@ -174,8 +253,12 @@ export default function App() {
       const res = await fetch('/api/think', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prompt: consultantPrompt, image_list: [spaceImage, libraryImage],
-          provider: config.provider, secretId: config.secretId, secretKey: config.secretKey, apiKey: config.googleApiKey,
+          prompt: consultantPrompt,
+          image_list: refImages.map(img => img.image),
+          image_names: refImages.map(img => img.name),
+          provider: config.provider,
+          secretId: config.secretId, secretKey: config.secretKey,
+          apiKey: config.googleApiKey,
         })
       });
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error?.message || `失败 (${res.status})`); }
@@ -186,7 +269,7 @@ export default function App() {
     finally { setIsGenerating(false); }
   };
 
-  // --- Step 2: 用优化 Prompt 生成最终效果图 ---
+  // Step 2: 生图
   const handleConfirmGenerate = async () => {
     if (!optimizedPrompt) return;
     setIsFinalGenerating(true); setThinkingPhase(false);
@@ -196,7 +279,7 @@ export default function App() {
       if (config.provider === 'hunyuan') {
         if (!config.secretId || !config.secretKey) { setShowSettings(true); throw new Error("请先设置 SecretId"); }
         const res = await fetch(config.baseUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ secretId: config.secretId, secretKey: config.secretKey, model: config.model, prompt: optimizedPrompt, size: "1024:1024", response_format: "url", image_list: [spaceImage, libraryImage] }) });
+          body: JSON.stringify({ secretId: config.secretId, secretKey: config.secretKey, model: config.model, prompt: optimizedPrompt, size: "1024:1024", response_format: "url", image_list: refImages.map(img => img.image) }) });
         if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error?.message || `失败 (${res.status})`); }
         const data = await res.json();
         const imageUrl = data.data?.[0]?.url || (data.data?.[0]?.b64_json ? `data:image/png;base64,${data.data[0].b64_json}` : null);
@@ -205,7 +288,7 @@ export default function App() {
       } else {
         if (!config.googleApiKey) { setShowSettings(true); throw new Error("请先设置 Google API Key"); }
         const res = await fetch('/api/google', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ apiKey: config.googleApiKey, prompt: optimizedPrompt, mode: 'consultant', image_list: [spaceImage, libraryImage], size: "1024x1024" }) });
+          body: JSON.stringify({ apiKey: config.googleApiKey, prompt: optimizedPrompt, mode: 'consultant', image_list: refImages.map(img => img.image), size: "1024x1024" }) });
         if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error?.message || `失败 (${res.status})`); }
         const data = await res.json();
         if (!data.data?.[0]?.url) throw new Error("未返回有效图像");
@@ -215,7 +298,7 @@ export default function App() {
     finally { setIsFinalGenerating(false); }
   };
 
-  // --- 局部重绘 ---
+  // 局部重绘
   const handleReEdit = async () => {
     if (!result || !maskBase64 || !editPrompt) return;
     setIsFinalGenerating(true); setError(null);
@@ -242,7 +325,7 @@ export default function App() {
     finally { setIsFinalGenerating(false); }
   };
 
-  // --- 灵感生成 ---
+  // 灵感生成
   const handleGenerateFromScratch = async () => {
     if (!prompt) return;
     setIsGenerating(true); setError(null);
@@ -277,10 +360,8 @@ export default function App() {
         <div className="max-w-6xl mx-auto px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-stone-900 rounded-lg flex items-center justify-center"><Palette className="text-white w-6 h-6" /></div>
-            <div>
-              <h1 className="text-xl font-serif font-bold tracking-tight">{env.siteTitle}</h1>
-              <p className="text-[10px] uppercase tracking-widest text-stone-500 font-semibold">{env.siteSubtitle}</p>
-            </div>
+            <div><h1 className="text-xl font-serif font-bold tracking-tight">{env.siteTitle}</h1>
+              <p className="text-[10px] uppercase tracking-widest text-stone-500 font-semibold">{env.siteSubtitle}</p></div>
           </div>
           <div className="flex items-center gap-4">
             <nav className="flex gap-1 bg-stone-100 p-1 rounded-full">
@@ -306,14 +387,27 @@ export default function App() {
 
               {activeTab === 'consultant' ? (
                 <div className="space-y-6">
-                  <div className="space-y-2">
-                    <label className="text-[11px] uppercase tracking-wider font-bold text-stone-500">图片 1：展位空间结构图</label>
-                    <ImageUpload label="展位结构" image={spaceImage} onUpload={setSpaceImage} icon={Maximize2} />
+                  {/* 参考图列表 */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] uppercase tracking-wider font-bold text-stone-500">参考图（可多张，点击命名）</label>
+                      <span className="text-[10px] text-stone-400">{refImages.length} 张</span>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-3">
+                      {refImages.map((img, idx) => (
+                        <NamedImageCard key={img.id} img={img} idx={idx}
+                          onUpdateName={updateImageName} onRemove={removeImage} />
+                      ))}
+                      <DropZone onFiles={addImages} />
+                    </div>
+
+                    {refImages.length === 0 && (
+                      <p className="text-xs text-stone-400 text-center py-2">暂无参考图，请上传</p>
+                    )}
                   </div>
-                  <div className="space-y-2">
-                    <label className="text-[11px] uppercase tracking-wider font-bold text-stone-500">图片 2：陈设小品素材库</label>
-                    <ImageUpload label="素材库" image={libraryImage} onUpload={setLibraryImage} icon={ImageIcon} />
-                  </div>
+
+                  {/* Prompt */}
                   <div className="space-y-2">
                     <label className="text-[11px] uppercase tracking-wider font-bold text-stone-500">设计指令 Prompt</label>
                     <textarea value={consultantPrompt} onChange={(e) => setConsultantPrompt(e.target.value)}
@@ -322,9 +416,9 @@ export default function App() {
 
                   {/* 阶段1: 开始分析 */}
                   {!thinkingPhase && !result && (
-                    <button onClick={handleStartThinking} disabled={!spaceImage || !libraryImage || isGenerating}
+                    <button onClick={handleStartThinking} disabled={refImages.length < 1 || isGenerating}
                       className={cn("w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all",
-                        spaceImage && libraryImage && !isGenerating ? "bg-stone-900 text-white hover:bg-stone-800 shadow-lg shadow-stone-200"
+                        refImages.length >= 1 && !isGenerating ? "bg-stone-900 text-white hover:bg-stone-800 shadow-lg shadow-stone-200"
                         : "bg-stone-200 text-stone-400 cursor-not-allowed")}>
                       {isGenerating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Brain className="w-5 h-5" />}
                       AI 深度分析 + 优化设计指令
@@ -336,7 +430,7 @@ export default function App() {
                     <div className="space-y-3">
                       <div className="p-4 rounded-2xl bg-amber-50 border border-amber-100 flex items-center gap-3">
                         <Loader2 className="w-5 h-5 text-amber-500 animate-spin flex-shrink-0" />
-                        <p className="text-sm text-amber-700">正在深度分析图片，优化设计指令...</p>
+                        <p className="text-sm text-amber-700">正在深度分析 {refImages.length} 张图片，优化设计指令...</p>
                       </div>
                       <button disabled className="w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-2 bg-stone-200 text-stone-400 cursor-not-allowed">
                         <Loader2 className="w-5 h-5 animate-spin" /> 分析中，请稍候
@@ -344,7 +438,7 @@ export default function App() {
                     </div>
                   )}
 
-                  {/* 阶段3: 显示优化结果 + 确认生成 */}
+                  {/* 阶段3: 显示优化结果 */}
                   {thinkingPhase && optimizedPrompt && !result && (
                     <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} className="space-y-3">
                       {optimizedExplanation && (
@@ -411,30 +505,32 @@ export default function App() {
             </section>
           </div>
 
-          {/* Right Column: Results */}
+          {/* Right Column */}
           <div className="lg:col-span-7">
             <AnimatePresence mode="wait">
-              {/* 思考阶段（显示图片预览） */}
+              {/* 思考阶段：显示所有参考图 */}
               {thinkingPhase && !result && (
-                <motion.div key="thinking" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-                  className="space-y-6">
-                  <div className="rounded-3xl overflow-hidden bg-white shadow-2xl shadow-stone-200">
-                    <img src={spaceImage!} alt="Space" className="w-full h-auto" referrerPolicy="no-referrer" />
-                    <div className="absolute top-4 left-4 px-3 py-1.5 rounded-full bg-white/80 backdrop-blur-md text-[10px] font-bold text-stone-600">图1：展位结构</div>
-                  </div>
-                  <div className="rounded-3xl overflow-hidden bg-white shadow-2xl shadow-stone-200">
-                    <img src={libraryImage!} alt="Library" className="w-full h-auto" referrerPolicy="no-referrer" />
-                    <div className="absolute top-4 left-4 px-3 py-1.5 rounded-full bg-white/80 backdrop-blur-md text-[10px] font-bold text-stone-600">图2：陈设素材</div>
+                <motion.div key="thinking" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
+                  <div className="grid grid-cols-2 gap-3">
+                    {refImages.map((img, idx) => (
+                      <div key={img.id} className="relative rounded-2xl overflow-hidden bg-white shadow-lg">
+                        <img src={img.image} alt={img.name} className="w-full aspect-video object-cover" referrerPolicy="no-referrer" />
+                        <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-black/60 text-white text-[10px] font-bold">#{idx+1}</div>
+                        <div className="p-2 border-t border-stone-100">
+                          <p className="text-xs font-medium text-stone-600 truncate">{img.name}</p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                   <div className="p-6 rounded-3xl bg-amber-50 border border-amber-100 text-center">
                     <Brain className="w-8 h-8 text-amber-400 mx-auto mb-2" />
-                    <p className="text-sm font-bold text-amber-700">AI 正在深度分析两张图片...</p>
+                    <p className="text-sm font-bold text-amber-700">AI 正在深度分析 {refImages.length} 张参考图...</p>
                     <p className="text-xs text-amber-500 mt-1">结合您的设计指令，生成最优化的展陈方案</p>
                   </div>
                 </motion.div>
               )}
 
-              {/* 最终生成中 */}
+              {/* 生成中 */}
               {(isGenerating || isFinalGenerating) && !result && !thinkingPhase && (
                 <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                   className="aspect-[16/10] rounded-3xl bg-stone-200/50 flex flex-col items-center justify-center gap-4 p-12 text-center">
@@ -477,8 +573,7 @@ export default function App() {
                         <Sparkles className="w-4 h-4 text-emerald-400" />
                       </div>
                       <textarea value={editPrompt} onChange={(e) => setEditPrompt(e.target.value)}
-                        placeholder="描述修改要求..."
-                        className="w-full h-24 p-4 rounded-2xl bg-white border border-emerald-200 focus:border-emerald-400 transition-all resize-none text-sm" />
+                        placeholder="描述修改要求..." className="w-full h-24 p-4 rounded-2xl bg-white border border-emerald-200 focus:border-emerald-400 transition-all resize-none text-sm" />
                       <div className="flex gap-3">
                         <button onClick={() => setMaskBase64(null)}
                           className="flex-1 py-3 rounded-xl bg-white text-stone-500 font-bold text-xs border border-emerald-200 hover:bg-emerald-100">重新涂抹</button>
@@ -507,7 +602,7 @@ export default function App() {
                   className="aspect-[16/10] rounded-3xl border-2 border-dashed border-stone-200 flex flex-col items-center justify-center p-12 text-center">
                   <div className="w-20 h-20 rounded-full bg-stone-50 flex items-center justify-center mb-6"><Palette className="w-10 h-10 text-stone-200" /></div>
                   <h3 className="text-xl font-serif font-bold text-stone-400">等待开启设计之旅</h3>
-                  <p className="text-sm text-stone-400 mt-2 max-w-xs">上传两张参考图，AI 将深度分析并生成专业展陈效果图</p>
+                  <p className="text-sm text-stone-400 mt-2 max-w-xs">上传多张参考图，AI 将深度分析并生成专业展陈效果图</p>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -545,11 +640,9 @@ export default function App() {
                 </div>
                 {config.provider === 'hunyuan' ? (
                   <>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">API URL</label>
+                    <div className="space-y-1.5"><label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">API URL</label>
                       <input type="text" value={config.baseUrl} onChange={(e) => setConfig({ ...config, baseUrl: e.target.value })}
-                        className="w-full px-4 py-2.5 rounded-xl bg-stone-50 border border-stone-200 focus:border-stone-400 outline-none text-sm font-mono" />
-                    </div>
+                        className="w-full px-4 py-2.5 rounded-xl bg-stone-50 border border-stone-200 focus:border-stone-400 outline-none text-sm font-mono" /></div>
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-1.5"><label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">SecretId</label>
                         <input type="text" value={config.secretId} onChange={(e) => setConfig({ ...config, secretId: e.target.value })}
@@ -558,19 +651,17 @@ export default function App() {
                         <input type="password" value={config.secretKey} onChange={(e) => setConfig({ ...config, secretKey: e.target.value })}
                           className="w-full px-4 py-2.5 rounded-xl bg-stone-50 border border-stone-200 focus:border-stone-400 outline-none text-sm font-mono" /></div>
                     </div>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">Model</label>
+                    <div className="space-y-1.5"><label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">Model</label>
                       <input type="text" value={config.model} onChange={(e) => setConfig({ ...config, model: e.target.value })}
                         className="w-full px-4 py-2.5 rounded-xl bg-stone-50 border border-stone-200 focus:border-stone-400 outline-none text-sm font-mono" />
-                      <p className="text-[10px] text-stone-400 italic">Tencent Hunyuan-Image-3.0-Instruct</p>
-                    </div>
+                      <p className="text-[10px] text-stone-400 italic">Tencent Hunyuan-Image-3.0-Instruct</p></div>
                   </>
                 ) : (
                   <div className="space-y-1.5">
                     <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">Google API Key</label>
                     <input type="password" value={config.googleApiKey} onChange={(e) => setConfig({ ...config, googleApiKey: e.target.value })}
                       className="w-full px-4 py-2.5 rounded-xl bg-stone-50 border border-stone-200 focus:border-stone-400 outline-none text-sm font-mono" />
-                    <p className="text-[10px] text-stone-400 italic">via /api/google - gemini-3-pro-image-preview</p>
+                    <p className="text-[10px] text-stone-400 italic">via /api/google - gemini-3-pro-image-preview (生成) / gemini-3.1-pro-preview (理解)</p>
                   </div>
                 )}
                 <div className="pt-4">
@@ -583,7 +674,6 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Footer */}
       <footer className="py-12 border-t border-stone-200 mt-12">
         <div className="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-6">
           <div className="text-xs text-stone-400 font-medium">{siteConfig.footer.copyright}</div>

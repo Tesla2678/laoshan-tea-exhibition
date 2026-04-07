@@ -28,7 +28,7 @@ function stripBase64Prefix(data: string): string {
 // ============================================================
 
 /** 腾讯混元 — ImageQuestion 图生问答模型 */
-async function hunyuanThink(secretId: string, secretKey: string, prompt: string, image_list: string[]): Promise<string> {
+async function hunyuanThink(secretId: string, secretKey: string, prompt: string, image_list: string[], names: string[]): Promise<string> {
   const client = new HunyuanClient({
     credential: { secretId, secretKey },
     region: "ap-shanghai",
@@ -60,10 +60,10 @@ async function hunyuanThink(secretId: string, secretKey: string, prompt: string,
       } as any);
 
       const answer = (res as any).Choices?.[0]?.Message?.Content || (res as any).Answer || "";
-      imageDescriptions.push(`【图片${i + 1}分析】：${answer}`);
+      imageDescriptions.push(`【${names[i]}】：${answer}`);
     } catch (err: any) {
       console.warn(`图片${i + 1}理解失败:`, err.message);
-      imageDescriptions.push(`【图片${i + 1}分析】：无法识别`);
+      imageDescriptions.push(`【${names[i]}分析】：无法识别`);
     }
   }
 
@@ -109,7 +109,7 @@ ${imageDescriptions.join('\n')}
 }
 
 /** Google Gemini — 用 vision 深度分析多图，生成优化 prompt */
-async function googleThink(apiKey: string, prompt: string, image_list: string[]): Promise<{ optimizedPrompt: string; explanation: string }> {
+async function googleThink(apiKey: string, prompt: string, image_list: string[], names: string[]): Promise<{ optimizedPrompt: string; explanation: string }> {
   const ai = new GoogleGenAI({ apiKey });
 
   const imageParts: any[] = image_list.map((img) => ({
@@ -122,11 +122,10 @@ async function googleThink(apiKey: string, prompt: string, image_list: string[])
 ${prompt}
 
 【你的任务】
-深度分析以上两张参考图，然后生成完整的设计指令：
+深度分析以上 ${image_list.length} 张参考图，然后生成完整的设计指令：
 
 第一步 - 图片解读：
-- 图片1（展位空间）：分析原建筑结构、隔断位置、入口方向、空间比例、层高特性
-- 图片2（陈设素材）：识别图中可用的茶文化小品（茶具、屏风、盆景、灯具、座椅等）
+${image_list.map((_, i) => `- ${names[i]}：分析原建筑结构、隔断位置、入口方向、空间比例、层高特性，或识别图中可用的茶文化小品（茶具、屏风、盆景、灯具、座椅等）`).join('\n')}
 
 第二步 - 生成设计指令：
 【优化 Prompt（英文）】
@@ -144,7 +143,7 @@ ${prompt}
 严格按格式输出，不要偏离格式。`;
 
   const response = await ai.models.generateContent({
-    model: 'gemini-2.5-flash-preview-05-20',
+    model: 'gemini-3.1-pro-preview',
     contents: { parts: [...imageParts, { text: thinkingPrompt }] }
   });
 
@@ -168,23 +167,28 @@ ${prompt}
 
 /** Step 1: 多图理解 + Prompt 优化 */
 app.post('/api/think', async (req, res) => {
-  const { prompt, image_list, provider, secretId, secretKey, apiKey } = req.body;
+  const { prompt, image_list, image_names, provider, secretId, secretKey, apiKey } = req.body;
 
-  if (!image_list || image_list.length < 2) {
+  if (!image_list || image_list.length < 1) {
     return res.json({ optimizedPrompt: prompt, explanation: "" });
   }
+
+  // 使用传入的名称列表，缺失则用序号
+  const names = image_names && image_names.length === image_list.length
+    ? image_names
+    : image_list.map((_: any, i: number) => `参考图${i + 1}`);
 
   try {
     if (provider === 'google') {
       const key = apiKey || process.env.GEMINI_API_KEY;
       if (!key) return res.status(400).json({ error: { message: "缺少 Google API Key" } });
-      const result = await googleThink(key, prompt, image_list);
+      const result = await googleThink(key, prompt, image_list, names);
       return res.json(result);
     } else {
       const id = secretId || process.env.TENCENT_SECRET_ID;
       const key = secretKey || process.env.TENCENT_SECRET_KEY;
       if (!id || !key) return res.status(400).json({ error: { message: "缺少腾讯云密钥" } });
-      const optimizedPrompt = await hunyuanThink(id, key, prompt, image_list);
+      const optimizedPrompt = await hunyuanThink(id, key, prompt, image_list, names);
       return res.json({ optimizedPrompt, explanation: "" });
     }
   } catch (err: any) {
