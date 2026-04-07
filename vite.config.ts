@@ -24,5 +24,9 @@ export default defineConfig(({mode}) => {
         },
       },
     },
+    build: {
+      // Ensure .env is embedded at build time
+      emptyOutDir: false,
+    },
   };
 });
