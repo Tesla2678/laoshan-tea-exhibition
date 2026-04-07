@@ -2,7 +2,6 @@ import 'dotenv/config';
 import express from 'express';
 import * as tencentcloud from 'tencentcloud-sdk-nodejs';
 import cors from 'cors';
-import { GoogleGenAI } from '@google/genai';
 
 const app = express();
 app.use(cors());
@@ -14,52 +13,60 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const PORT = process.env.PORT || 3001;
 
 function stripBase64(data: string) { return data.replace(/^data:image\/\w+;base64,/, ''); }
+function routeProvider(model: string) { return (model || '').startsWith('hunyuan') ? 'hunyuan' : 'google'; }
 
-// 根据 model 名自动路由到 Hunyuan 或 Google
-function routeByModel(model: string): 'hunyuan' | 'google' {
-  return model.startsWith('hunyuan') ? 'hunyuan' : 'google';
+// --- Fetch with timeout wrapper ---
+async function fetchWithTimeout(url: string, opts: RequestInit & { timeout?: number } = {}) {
+  const { timeout = 60000, ...fetchOpts } = opts;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    const res = await fetch(url, { ...fetchOpts, signal: controller.signal as any });
+    const json = await res.json();
+    clearTimeout(timer);
+    return json;
+  } catch (err: any) {
+    clearTimeout(timer);
+    if (err.name === 'AbortError') throw new Error(`请求超时（${timeout / 1000}秒）`);
+    throw err;
+  }
 }
 
 // ============================================================
-// 统一入口：/api/generate
+// POST /api/generate
 // func: t2i | think | consultant | reedit
 // model: 模型名（自动路由到对应厂商）
 // ============================================================
 app.post('/api/generate', async (req, res) => {
   const { func, model, prompt, image_list, maskImage, image_names, size, secretId, secretKey, apiKey } = req.body;
+  const provider = routeProvider(model || '');
+  const timeout = (func === 'consultant' || func === 'reedit') ? 120000 : 60000;
 
-  const provider = routeByModel(model || '');
-  const key = provider === 'hunyuan'
-    ? (secretId || process.env.TENCENT_SECRET_ID || '')
-    : (apiKey || process.env.GEMINI_API_KEY || '');
+  if (provider === 'google') {
+    const key = apiKey || process.env.GEMINI_API_KEY || '';
+    if (!key) return res.status(400).json({ error: { message: '缺少 Google API Key' } });
 
-  if (!key) {
-    return res.status(400).json({ error: { message: provider === 'hunyuan' ? '缺少 SecretId/SecretKey' : '缺少 Google API Key' } });
-  }
+    try {
+      const baseModelsUrl = 'https://generativelanguage.googleapis.com/v1beta/models';
 
-  try {
-    if (provider === 'google') {
-      const ai = new GoogleGenAI({ apiKey: key });
+      // Build image parts
       const imageParts = (image_list || []).map((img: string) => ({
         inlineData: { data: stripBase64(img), mimeType: 'image/png' }
       }));
       if (maskImage) imageParts.push({ inlineData: { data: stripBase64(maskImage), mimeType: 'image/png' } });
 
-      let textPrompt = prompt;
-      let resultImage = '';
-
       if (func === 'think') {
-        // 多图理解
+        // --- Multi-image understanding + prompt optimization ---
         const names = (image_names && image_names.length === (image_list || []).length)
           ? image_names : (image_list || []).map((_: any, i: number) => `参考图${i + 1}`);
 
-        textPrompt = `你是一位顶级的崂山茶展陈设计专家，专注于在大型展览馆内打造崂山茶文化沉浸式空间。
+        const textPrompt = `你是一位顶级的崂山茶展陈设计专家，专注于在大型展览馆内打造崂山茶文化沉浸式空间。
 
 【用户原始需求】
 ${prompt}
 
 【参考图片（共 ${(image_list || []).length} 张）】
-${(image_list || []).map((_: string, i: number) => names[i]).join('\n')}
+${names.join('\n')}
 
 【你的任务】
 深度分析以上 ${(image_list || []).length} 张参考图，生成完整的设计指令：
@@ -78,75 +85,120 @@ ${(image_list || []).map((_: string, i: number) => names[i]).join('\n')}
 
 严格按格式输出。`;
 
-        const response = await ai.models.generateContent({ model, contents: { parts: [...imageParts, { text: textPrompt }] } });
-        const raw = response.candidates?.[0]?.content?.parts?.filter((p: any) => p.text).map((p: any) => p.text).join('') || '';
+        const body = {
+          contents: { parts: [...imageParts, { text: textPrompt }] }
+        };
+
+        const data: any = await fetchWithTimeout(
+          `${baseModelsUrl}/${model}:generateContent?key=${key}`,
+          { method: 'POST', timeout, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+        );
+
+        if (data.error) throw new Error(data.error.message || 'Google API 错误');
+
+        const raw = data.candidates?.[0]?.content?.parts
+          ?.filter((p: any) => p.text)?.map((p: any) => p.text)?.join('') || '';
+
         const pm = raw.match(/【优化 Prompt（英文）】\s*([\s\S]*?)(?=【中文设计说明】|$)/i);
         const em = raw.match(/【中文设计说明】\s*([\s\S]*?)$/i);
+
         return res.json({ optimizedPrompt: pm?.[1]?.trim() || raw, explanation: em?.[1]?.trim() || '' });
 
       } else if (func === 't2i') {
-        const response = await ai.models.generateContent({
-          model, contents: { parts: [{ text: prompt }] },
-          config: { responseModalities: ['image', 'text'] }
-        } as any);
-        for (const part of response.candidates?.[0]?.content?.parts || []) {
-          if (part.inlineData) resultImage = `data:image/png;base64,${part.inlineData.data}`;
+        // --- Text to Image ---
+        const data: any = await fetchWithTimeout(
+          `${baseModelsUrl}/${model}:generateContent?key=${key}`,
+          { method: 'POST', timeout, headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents: { parts: [{ text: prompt }] }, generationConfig: { responseModalities: ['image', 'text'] } }) }
+        );
+        if (data.error) throw new Error(data.error.message || 'Google API 错误');
+        let imageUrl = '', textPart = '';
+        for (const p of data.candidates?.[0]?.content?.parts || []) {
+          if (p.inlineData) imageUrl = `data:image/png;base64,${p.inlineData.data}`;
+          else if (p.text) textPart += p.text;
         }
-        const textPart = response.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || '';
-        if (!resultImage) throw new Error("未生成图像");
-        return res.json({ data: [{ url: resultImage, revised_prompt: textPart }] });
+        if (!imageUrl) throw new Error('未生成图像');
+        return res.json({ data: [{ url: imageUrl, revised_prompt: textPart }] });
 
       } else if (func === 'consultant') {
-        textPrompt = `你是一位专业的展陈设计顾问，专注于在大型展览馆环境下打造崂山茶文化展示空间。
+        // --- Multi-image reference generation ---
+        const textPrompt = `你是一位专业的展陈设计顾问，专注于在大型展览馆环境下打造崂山茶文化展示空间。
 展会背景：外部是大型展馆（约2000平米，层高15米，人工光为主）。核心空间（图片1）是约100平米的独立展示区，通过隔断、展墙、帘幕等软性界面围合，顶部开放。
 核心任务：1. 空间结构绝对一致性：以图片1为唯一且不可改变的建筑底稿，必须保持原有空间的隔断位置、展墙厚度、入口朝向、空间比例、层高以及视线通廊完全不变。2. 陈设小品精选：从图片2（素材库）中精选最适合崂山茶文化气质（自然、质朴、山海气息）的3-6件核心小品。3. 展会适配布局：将选定的小品精准置入图片1的既有空间内，主要陈设面向主入口。隔断/展墙作为展示载体。考虑灯光层次。预留观众驻留与体验动线。4. 视觉层次：确保近景（体验桌椅）、中景（展示主体）、远景（背景隔断）三层关系分明。5. 输出品质：输出一张完整、具有专业展陈质感的展示效果图，光影真实，色调温润。6. 附上简要设计说明（不超过200字），包括选用了哪些核心小品、布置位置与功能角色、以及如何营造崂山茶的独特场域感。`;
-        const response = await ai.models.generateContent({ model, contents: { parts: [...imageParts, { text: textPrompt }] } });
-        for (const part of response.candidates?.[0]?.content?.parts || []) {
-          if (part.inlineData) resultImage = `data:image/png;base64,${part.inlineData.data}`;
+
+        const data: any = await fetchWithTimeout(
+          `${baseModelsUrl}/${model}:generateContent?key=${key}`,
+          { method: 'POST', timeout, headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents: { parts: [...imageParts, { text: textPrompt }] } }) }
+        );
+        if (data.error) throw new Error(data.error.message || 'Google API 错误');
+        let imageUrl = '', textPart = '';
+        for (const p of data.candidates?.[0]?.content?.parts || []) {
+          if (p.inlineData) imageUrl = `data:image/png;base64,${p.inlineData.data}`;
+          else if (p.text) textPart += p.text;
         }
-        const textPart = response.candidates?.[0]?.content?.parts?.find((p: any) => p.text)?.text || '';
-        if (!resultImage) throw new Error("未生成图像");
-        return res.json({ data: [{ url: resultImage, revised_prompt: textPart }] });
+        if (!imageUrl) throw new Error('未生成图像');
+        return res.json({ data: [{ url: imageUrl, revised_prompt: textPart }] });
 
       } else if (func === 'reedit') {
-        textPrompt = maskImage
+        // --- Mask editing ---
+        const textPrompt = maskImage
           ? `请对提供的图片进行局部修改。第一张是原始设计，第二张是遮罩（白色=需修改区域）。修改要求：${prompt}。仅修改遮罩区域，输出完整效果图。`
           : prompt;
-        const response = await ai.models.generateContent({ model, contents: { parts: [...imageParts, { text: textPrompt }] } });
-        for (const part of response.candidates?.[0]?.content?.parts || []) {
-          if (part.inlineData) resultImage = `data:image/png;base64,${part.inlineData.data}`;
+
+        const data: any = await fetchWithTimeout(
+          `${baseModelsUrl}/${model}:generateContent?key=${key}`,
+          { method: 'POST', timeout, headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ contents: { parts: [...imageParts, { text: textPrompt }] } }) }
+        );
+        if (data.error) throw new Error(data.error.message || 'Google API 错误');
+        let imageUrl = '';
+        for (const p of data.candidates?.[0]?.content?.parts || []) {
+          if (p.inlineData) imageUrl = `data:image/png;base64,${p.inlineData.data}`;
         }
-        if (!resultImage) throw new Error("未生成图像");
-        return res.json({ data: [{ url: resultImage }] });
+        if (!imageUrl) throw new Error('未生成图像');
+        return res.json({ data: [{ url: imageUrl }] });
       }
 
-    } else {
-      // Hunyuan
-      const { Hunyuanaccountprovince_pub } = require('tencentcloud-sdk-nodejs/tencentcloud/services/hunyuanaccountprovince.v20230928');
-      const hClient = new (HunyuanClient as any)({
-        credential: { secretId: key, secretKey: secretKey || process.env.TENCENT_SECRET_KEY || '' },
-        region: "ap-shanghai",
-        profile: { httpProfile: { endpoint: "hunyuan.tencentcloudapi.com" } }
-      });
+    } catch (err: any) {
+      console.error(`[/api/generate google/${func}] error:`, err.message);
+      return res.status(500).json({ error: { message: err.message } });
+    }
 
-      let resolution = "1024:1024";
-      if (size && typeof size === 'string' && size.includes('x')) resolution = size.replace('x', ':');
+  } else {
+    // --- Hunyuan ---
+    const id = secretId || process.env.TENCENT_SECRET_ID || '';
+    const key = secretKey || process.env.TENCENT_SECRET_KEY || '';
+    if (!id || !key) return res.status(400).json({ error: { message: '缺少腾讯云 SecretId 或 SecretKey' } });
 
+    let resolution = "1024:1024";
+    if (size && typeof size === 'string' && size.includes('x')) resolution = size.replace('x', ':');
+
+    try {
       if (func === 'think') {
+        // Hunyuan Vision 多图理解
+        const hClient = new (HunyuanClient as any)({
+          credential: { secretId: id, secretKey: key },
+          region: "ap-shanghai",
+          profile: { httpProfile: { endpoint: "hunyuan.tencentcloudapi.com" } }
+        });
+
         const names = (image_names && image_names.length === (image_list || []).length)
           ? image_names : (image_list || []).map((_: any, i: number) => `参考图${i + 1}`);
 
         const analysisResults: string[] = [];
+        const prompts = [
+          "请详细描述这张图片的主体内容、建筑结构特征、布局方式、色彩风格和空间氛围。输出中文描述。",
+          "请识别这张图片中的陈设物品，包括茶具、屏风、盆景、灯具、座椅等，指出具体形态和位置。"
+        ];
+
         for (let i = 0; i < (image_list || []).length; i++) {
           try {
-            const prompts = [
-              "请详细描述这张图片的主体内容、建筑结构特征、布局方式、色彩风格和空间氛围。输出中文描述。",
-              "请识别这张图片中的陈设物品，包括茶具、屏风、盆景、灯具、座椅等，指出具体形态和位置。"
-            ];
+            const base64Data = stripBase64(image_list[i]);
             const r = await hClient.ImageQuestion({
               Model: "hunyuan-vision-image-question",
               Messages: [{ Role: "user", Content: [
-                { Type: "image_url", ImageUrl: { Url: image_list[i] } },
+                { Type: "image_url", ImageUrl: { Url: `data:image/png;base64,${base64Data}` } },
                 { Type: "text", Text: prompts[i % prompts.length] }
               ]}]
             } as any);
@@ -160,15 +212,16 @@ ${(image_list || []).map((_: string, i: number) => names[i]).join('\n')}
 
 【用户需求】${prompt}
 ${analysisResults.join('\n')}
+
 【输出要求】
 【优化 Prompt（英文）】（包含空间结构、小品选择、布局、灯光、色调、风格等细节，用于图生图）
 【中文设计说明】（200字以内，简述设计思路）`;
 
         try {
-          const textR = await hClient.ImageQuestion({
+          const textR: any = await hClient.ImageQuestion({
             Model: "hunyuan-vision-image-question",
             Messages: [{ Role: "user", Content: [{ Type: "text", Text: synthesis }] }]
-          } as any);
+          });
           const result = textR?.Choices?.[0]?.Message?.Content || textR?.Answer || prompt;
           return res.json({ optimizedPrompt: result, explanation: "" });
         } catch {
@@ -176,9 +229,9 @@ ${analysisResults.join('\n')}
         }
 
       } else {
-        // t2i / consultant / reedit — all use SubmitTextToImageJob
+        // Hunyuan: t2i / consultant / reedit
         const client = new AiartClient({
-          credential: { secretId: key, secretKey: secretKey || process.env.TENCENT_SECRET_KEY || '' },
+          credential: { secretId: id, secretKey: key },
           region: "ap-shanghai",
           profile: { httpProfile: { endpoint: "aiart.tencentcloudapi.com" } }
         });
@@ -205,16 +258,16 @@ ${analysisResults.join('\n')}
         if (!resultUrl) throw new Error("任务超时");
         return res.json({ data: [{ url: resultUrl, revised_prompt: revisedPrompt }] });
       }
+    } catch (err: any) {
+      console.error(`[/api/generate hunyuan/${func}] error:`, err.message);
+      return res.status(500).json({ error: { message: err.message } });
     }
-  } catch (err: any) {
-    console.error(`/api/generate [${func}] [${provider}] error:`, err);
-    res.status(500).json({ error: { message: err.message } });
   }
 });
 
 app.listen(PORT, () => {
   console.log(`\n========================================`);
   console.log(`  Backend started on http://localhost:${PORT}`);
-  console.log(`  Unified endpoint: POST /api/generate`);
+  console.log(`  POST /api/generate`);
   console.log(`========================================\n`);
 });
