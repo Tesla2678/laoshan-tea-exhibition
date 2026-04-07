@@ -1,20 +1,80 @@
 // ============================================================
 // 崂山茶展陈顾问 · 网站配置文件
-// 硬编码内容在此处管理，每次启动自动加载
 // ============================================================
 
+// 4 个功能的模型选项
+export const MODEL_OPTIONS = {
+  hunyuan: {
+    label: 'Tencent Hunyuan',
+    endpoints: {
+      textToImage: '/api/hunyuan/t2i',
+      think: '/api/hunyuan/think',
+      consultant: '/api/hunyuan/consultant',
+      reedit: '/api/hunyuan/reedit',
+    },
+    models: {
+      textToImage: [
+        { value: 'hunyuan-image-3.0-instruct', label: 'Hunyuan-Image-3.0-Instruct（推荐）' },
+      ],
+      think: [
+        { value: 'hunyuan-vision-image-question', label: 'Hunyuan-Vision-Image-Question（多图理解）' },
+      ],
+      consultant: [
+        { value: 'hunyuan-image-3.0-instruct', label: 'Hunyuan-Image-3.0-Instruct（多图参考）' },
+      ],
+      reedit: [
+        { value: 'hunyuan-image-3.0-instruct', label: 'Hunyuan-Image-3.0-Instruct（局部重绘）' },
+      ],
+    },
+    defaultModels: {
+      textToImage: 'hunyuan-image-3.0-instruct',
+      think: 'hunyuan-vision-image-question',
+      consultant: 'hunyuan-image-3.0-instruct',
+      reedit: 'hunyuan-image-3.0-instruct',
+    },
+  },
+  google: {
+    label: 'Google Gemini',
+    endpoints: {
+      textToImage: '/api/google/t2i',
+      think: '/api/google/think',
+      consultant: '/api/google/consultant',
+      reedit: '/api/google/reedit',
+    },
+    models: {
+      textToImage: [
+        { value: 'gemini-3.1-flash-preview', label: 'Gemini-3.1-Flash-Preview（文生图）' },
+        { value: 'gemini-3.0-flash-preview', label: 'Gemini-3.0-Flash-Preview' },
+      ],
+      think: [
+        { value: 'gemini-3.1-pro-preview', label: 'Gemini-3.1-Pro-Preview（多图理解，推荐）' },
+        { value: 'gemini-2.5-flash-preview-05-20', label: 'Gemini-2.5-Flash-Preview' },
+      ],
+      consultant: [
+        { value: 'gemini-3-pro-image-preview', label: 'Gemini-3-Pro-Image-Preview（多图参考，推荐）' },
+        { value: 'gemini-2.5-flash-preview-05-20', label: 'Gemini-2.5-Flash-Preview' },
+      ],
+      reedit: [
+        { value: 'gemini-3-pro-image-preview', label: 'Gemini-3-Pro-Image-Preview（局部重绘，推荐）' },
+        { value: 'gemini-2.5-flash-preview-05-20', label: 'Gemini-2.5-Flash-Preview' },
+      ],
+    },
+    defaultModels: {
+      textToImage: 'gemini-3.1-flash-preview',
+      think: 'gemini-3.1-pro-preview',
+      consultant: 'gemini-3-pro-image-preview',
+      reedit: 'gemini-3-pro-image-preview',
+    },
+  },
+} as const;
+
 export const siteConfig = {
-  // --- 网站信息 ---
   siteTitle: '崂山茶展陈顾问',
   siteSubtitle: 'Laoshan Tea Exhibition Design',
 
-  // --- 默认设计指令 Prompt ---
-  defaultConsultantPrompt: `作为专业展陈设计顾问,请参考我提供的两张参考图。
-第一张图(输入图1):这是展位空间结构图(基于SketchUp建立)。你必须【严格保持】第一张图中的所有空间结构、墙面隔断、出入口和视线通廊【完全不变】。
-第二张图(输入图2):这是陈设小品素材库。请将图2中的茶具、屏风、盆景等中式元素巧妙地融入到第一张图的空间中。
-风格要求:自然质朴,山海气息,高级专业展陈效果图,灯光层次丰富,克制陈设(3-6件核心小品),打造崂山茶文化沉浸式质感。务必在不改变原建筑结构的前提下,呈现出照片级的高清真实光影效果!`,
+  defaultConsultantPrompt: `作为专业展陈设计顾问，请参考我提供的参考图，将茶具、屏风、盆景等中式元素巧妙地融入空间。
+风格要求：自然质朴，山海气息，高级专业展陈效果图，灯光层次丰富，克制陈设（3-6件核心小品），打造崂山茶文化沉浸式质感。务必在不改变原建筑结构的前提下，呈现出照片级的高清真实光影效果！`,
 
-  // --- 设计原则列表 ---
   designPrinciples: [
     '忠于原空间：严格保持隔断、入口与视线通廊不变。',
     '展会适配：考虑人流视线，主要陈设面向主入口。',
@@ -23,31 +83,12 @@ export const siteConfig = {
     '克制陈设：以3-6件核心小品构建沉浸式场域。',
   ],
 
-  // --- API 配置默认值 ---
-  api: {
-    hunyuan: {
-      baseUrl: 'http://localhost:3001/api/hunyuan',
-      model: 'hunyuan-image-3.0-instruct',
-    },
-    google: {
-      baseUrl: 'http://localhost:3001/api/google',
-      model: {
-        consultant: 'gemini-3-pro-image-preview',
-        reedit: 'gemini-3-pro-image-preview',
-        generator: 'gemini-3-pro-image-preview',
-      },
-    },
-  },
-
-  // --- 加载状态文案 ---
   loadingText: '正在为您构思...',
   loadingSubText: '正在分析展位结构与视线，打造沉浸式崂山茶场域',
 
-  // --- 空状态文案 ---
   emptyTitle: '等待开启设计之旅',
-  emptyDesc: '请在左侧上传您的展位空间结构图与陈设素材，我们将为您生成专业的崂山茶展陈效果图。',
+  emptyDesc: '上传多张参考图，AI 将深度分析并生成专业展陈效果图',
 
-  // --- 版权信息 ---
   footer: {
     copyright: '© 2026 崂山茶展陈顾问 · 沉浸式设计系统',
     links: [
@@ -57,33 +98,3 @@ export const siteConfig = {
     ],
   },
 };
-
-// 供 server.ts 读取的类型（不带默认值，仅做类型标注）
-export interface SiteConfig {
-  siteTitle: string;
-  siteSubtitle: string;
-  defaultConsultantPrompt: string;
-  designPrinciples: string[];
-  api: {
-    hunyuan: {
-      baseUrl: string;
-      model: string;
-    };
-    google: {
-      baseUrl: string;
-      model: {
-        consultant: string;
-        reedit: string;
-        generator: string;
-      };
-    };
-  };
-  loadingText: string;
-  loadingSubText: string;
-  emptyTitle: string;
-  emptyDesc: string;
-  footer: {
-    copyright: string;
-    links: { label: string; href: string }[];
-  };
-}

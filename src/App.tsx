@@ -3,16 +3,16 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useCallback, useRef } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { 
   Upload, Image as ImageIcon, Sparkles, Loader2, Info,
-  RefreshCw, Palette, Settings, X, Brain, Plus, Trash2, Pencil, Check
+  RefreshCw, Palette, Settings, X, Brain, Plus, Trash2, Pencil, Check, Wand2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { siteConfig } from './site-config';
+import { siteConfig, MODEL_OPTIONS } from './site-config';
 
 function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }
 
@@ -23,65 +23,40 @@ declare global { interface Window {
 const env = {
   siteTitle: siteConfig.siteTitle,
   siteSubtitle: siteConfig.siteSubtitle,
-  backendPort: window.__BACKEND_PORT__ || '3001',
   frontendPort: window.__FRONTEND_PORT__ || '3000',
   secretId: window.__SECRET_ID__ || '',
   secretKey: window.__SECRET_KEY__ || '',
   googleApiKey: window.__GOOGLE_API_KEY__ || '',
 };
 
+// --- Types ---
 interface DesignResult { imageUrl: string; explanation: string; }
 interface RefImage { id: string; image: string; name: string; }
+type Provider = 'hunyuan' | 'google';
 
-// --- 单张可命名图片卡 ---
-const NamedImageCard = ({
-  img, onUpdateName, onRemove, idx
-}: {
-  img: RefImage;
-  onUpdateName: (id: string, name: string) => void;
-  onRemove: (id: string) => void;
-  idx: number;
-}) => {
+// --- 可命名图片卡 ---
+const NamedImageCard = ({ img, idx, onRename, onRemove }: { img: RefImage; idx: number; onRename: (id: string, name: string) => void; onRemove: (id: string) => void }) => {
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(img.name);
-
-  const commit = () => {
-    onUpdateName(img.id, name || `图片${idx + 1}`);
-    setEditing(false);
-  };
-
+  const commit = () => { onRename(img.id, name || `图片${idx + 1}`); setEditing(false); };
   return (
-    <div className="relative group rounded-2xl overflow-hidden bg-white border border-stone-200 shadow-sm hover:shadow-md transition-all">
+    <div className="relative rounded-2xl overflow-hidden bg-white border border-stone-200 shadow-sm hover:shadow-md transition-all">
       <img src={img.image} alt={img.name} className="w-full aspect-video object-cover" referrerPolicy="no-referrer" />
-      
-      {/* 序号标签 */}
-      <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-black/60 text-white text-[10px] font-bold">
-        #{idx + 1}
-      </div>
-
-      {/* 名称编辑 */}
+      <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-black/60 text-white text-[10px] font-bold">#{idx + 1}</div>
       <div className="p-2 border-t border-stone-100">
         {editing ? (
           <div className="flex items-center gap-1">
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
+            <input value={name} onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setName(img.name); setEditing(false); } }}
-              className="flex-1 px-2 py-1 text-xs rounded bg-stone-50 border border-stone-200 outline-none focus:border-stone-400 font-mono"
-              autoFocus
-            />
+              className="flex-1 px-2 py-1 text-xs rounded bg-stone-50 border border-stone-200 outline-none font-mono" autoFocus />
             <button onClick={commit} className="p-1 rounded bg-emerald-500 text-white hover:bg-emerald-600"><Check className="w-3 h-3" /></button>
           </div>
         ) : (
           <div className="flex items-center justify-between">
             <span className="text-xs font-medium text-stone-600 truncate flex-1">{img.name}</span>
             <div className="flex gap-1 ml-1">
-              <button onClick={() => setEditing(true)} className="p-1 rounded hover:bg-stone-100 text-stone-400 hover:text-stone-600">
-                <Pencil className="w-3 h-3" />
-              </button>
-              <button onClick={() => onRemove(img.id)} className="p-1 rounded hover:bg-red-50 text-stone-400 hover:text-red-500">
-                <Trash2 className="w-3 h-3" />
-              </button>
+              <button onClick={() => setEditing(true)} className="p-1 rounded hover:bg-stone-100 text-stone-400 hover:text-stone-600"><Pencil className="w-3 h-3" /></button>
+              <button onClick={() => onRemove(img.id)} className="p-1 rounded hover:bg-red-50 text-stone-400 hover:text-red-500"><Trash2 className="w-3 h-3" /></button>
             </div>
           </div>
         )}
@@ -90,29 +65,20 @@ const NamedImageCard = ({
   );
 };
 
-// --- 拖拽上传区域 ---
+// --- 拖拽上传 ---
 const DropZone = ({ onFiles }: { onFiles: (files: File[]) => void }) => {
-  const { getRootProps, getInputProps, isDragActive } = useDropzone({
-    onDrop: onFiles,
-    accept: { 'image/*': [] },
-    multiple: true
-  } as any);
-
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop: onFiles, accept: { 'image/*': [] }, multiple: true } as any);
   return (
     <div {...getRootProps()}
-      className={cn("border-2 border-dashed rounded-2xl transition-all duration-300 cursor-pointer flex flex-col items-center justify-center gap-3 py-8",
-        isDragActive ? "border-emerald-400 bg-emerald-50" : "border-stone-200 hover:border-stone-400 bg-stone-50/50"
-      )}
-    >
+      className={cn("border-2 border-dashed rounded-2xl transition-all cursor-pointer flex flex-col items-center justify-center gap-3 py-8",
+        isDragActive ? "border-emerald-400 bg-emerald-50" : "border-stone-200 hover:border-stone-400 bg-stone-50/50")}>
       <input {...getInputProps()} />
-      <div className={cn("w-12 h-12 rounded-full flex items-center justify-center transition-colors",
-        isDragActive ? "bg-emerald-100" : "bg-stone-100"
-      )}>
-        <Plus className={cn("w-6 h-6 transition-colors", isDragActive ? "text-emerald-500" : "text-stone-400")} />
+      <div className={cn("w-12 h-12 rounded-full flex items-center justify-center transition-colors", isDragActive ? "bg-emerald-100" : "bg-stone-100")}>
+        <Plus className={cn("w-6 h-6", isDragActive ? "text-emerald-500" : "text-stone-400")} />
       </div>
       <div className="text-center">
         <p className="text-sm font-medium text-stone-600">点击或拖拽上传参考图</p>
-        <p className="text-xs text-stone-400 mt-1">支持多张图片，点击每张图片可命名</p>
+        <p className="text-xs text-stone-400 mt-1">支持多张，点击图片可命名</p>
       </div>
     </div>
   );
@@ -123,7 +89,6 @@ const BrushCanvas = ({ imageUrl, onSaveMask, onCancel }: { imageUrl: string; onS
   const canvasRef = React.useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
   const [brushSize, setBrushSize] = useState(40);
-
   const getPos = (e: React.MouseEvent | React.TouchEvent, c: HTMLCanvasElement) => {
     const r = c.getBoundingClientRect();
     return 'touches' in e ? { x: e.touches[0].clientX - r.left, y: e.touches[0].clientY - r.top }
@@ -188,18 +153,33 @@ const BrushCanvas = ({ imageUrl, onSaveMask, onCancel }: { imageUrl: string; onS
   );
 };
 
+// --- 每个功能的模型选择行 ---
+const ModelSelectRow = ({ label, value, options, onChange }: { label: string; value: string; options: { value: string; label: string }[]; onChange: (v: string) => void }) => (
+  <div className="flex items-center gap-3">
+    <span className="text-[10px] uppercase tracking-widest font-bold text-stone-400 w-28 flex-shrink-0">{label}</span>
+    <select value={value} onChange={(e) => onChange(e.target.value)}
+      className="flex-1 px-3 py-2 rounded-xl bg-stone-50 border border-stone-200 text-xs font-mono outline-none focus:border-stone-400">
+      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+  </div>
+);
+
 // --- 主应用 ---
 export default function App() {
   const [showSettings, setShowSettings] = useState(false);
-  const [config, setConfig] = useState({
-    provider: 'hunyuan' as 'hunyuan' | 'google',
-    baseUrl: `http://localhost:${env.backendPort}/api/hunyuan`,
-    secretId: env.secretId, secretKey: env.secretKey,
-    model: 'hunyuan-image-3.0-instruct',
-    googleApiKey: env.googleApiKey,
+  const [provider, setProvider] = useState<Provider>('hunyuan');
+  const [secretId, setSecretId] = useState(env.secretId);
+  const [secretKey, setSecretKey] = useState(env.secretKey);
+  const [googleApiKey, setGoogleApiKey] = useState(env.googleApiKey);
+
+  // 4 个功能的模型
+  const [models, setModels] = useState({
+    textToImage: MODEL_OPTIONS.hunyuan.defaultModels.textToImage,
+    think: MODEL_OPTIONS.hunyuan.defaultModels.think,
+    consultant: MODEL_OPTIONS.hunyuan.defaultModels.consultant,
+    reedit: MODEL_OPTIONS.hunyuan.defaultModels.reedit,
   });
 
-  // 动态参考图列表
   const [refImages, setRefImages] = useState<RefImage[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [result, setResult] = useState<DesignResult | null>(null);
@@ -218,11 +198,14 @@ export default function App() {
   const [optimizedExplanation, setOptimizedExplanation] = useState('');
   const [isFinalGenerating, setIsFinalGenerating] = useState(false);
 
-  const saveConfig = (cfg: typeof config) => { setConfig(cfg); setShowSettings(false); };
+  const modelOpts = MODEL_OPTIONS[provider];
 
-  // 添加图片
+  const updateModel = (func: keyof typeof models, v: string) => {
+    setModels(prev => ({ ...prev, [func]: v }));
+  };
+
   const addImages = useCallback((files: File[]) => {
-    files.forEach((file) => {
+    files.forEach(file => {
       const reader = new FileReader();
       reader.onload = () => {
         setRefImages(prev => [...prev, {
@@ -235,7 +218,7 @@ export default function App() {
     });
   }, []);
 
-  const updateImageName = useCallback((id: string, name: string) => {
+  const renameImage = useCallback((id: string, name: string) => {
     setRefImages(prev => prev.map(img => img.id === id ? { ...img, name } : img));
   }, []);
 
@@ -243,7 +226,7 @@ export default function App() {
     setRefImages(prev => prev.filter(img => img.id !== id));
   }, []);
 
-  // Step 1: 多图理解
+  // Step 1: 思考
   const handleStartThinking = async () => {
     if (refImages.length < 1) return;
     setIsGenerating(true); setThinkingPhase(true);
@@ -256,9 +239,11 @@ export default function App() {
           prompt: consultantPrompt,
           image_list: refImages.map(img => img.image),
           image_names: refImages.map(img => img.name),
-          provider: config.provider,
-          secretId: config.secretId, secretKey: config.secretKey,
-          apiKey: config.googleApiKey,
+          provider,
+          secretId, secretKey,
+          apiKey: googleApiKey,
+          thinkModel: models.think,
+          consultantModel: models.consultant,
         })
       });
       if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error?.message || `失败 (${res.status})`); }
@@ -269,26 +254,26 @@ export default function App() {
     finally { setIsGenerating(false); }
   };
 
-  // Step 2: 生图
+  // Step 2: 生图（consultant）
   const handleConfirmGenerate = async () => {
     if (!optimizedPrompt) return;
     setIsFinalGenerating(true); setThinkingPhase(false);
     setError(null); setResult(null); setIsBrushMode(false); setMaskBase64(null);
 
     try {
-      if (config.provider === 'hunyuan') {
-        if (!config.secretId || !config.secretKey) { setShowSettings(true); throw new Error("请先设置 SecretId"); }
-        const res = await fetch(config.baseUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ secretId: config.secretId, secretKey: config.secretKey, model: config.model, prompt: optimizedPrompt, size: "1024:1024", response_format: "url", image_list: refImages.map(img => img.image) }) });
+      if (provider === 'hunyuan') {
+        if (!secretId || !secretKey) { setShowSettings(true); throw new Error("请先设置 SecretId"); }
+        const res = await fetch('/api/hunyuan/consultant', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ secretId, secretKey, model: models.consultant, prompt: optimizedPrompt, size: "1024:1024", image_list: refImages.map(img => img.image) }) });
         if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error?.message || `失败 (${res.status})`); }
         const data = await res.json();
         const imageUrl = data.data?.[0]?.url || (data.data?.[0]?.b64_json ? `data:image/png;base64,${data.data[0].b64_json}` : null);
         if (!imageUrl) throw new Error("未返回有效图像");
         setResult({ imageUrl, explanation: optimizedExplanation || data.data?.[0]?.revised_prompt || "生成成功。" });
       } else {
-        if (!config.googleApiKey) { setShowSettings(true); throw new Error("请先设置 Google API Key"); }
-        const res = await fetch('/api/google', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ apiKey: config.googleApiKey, prompt: optimizedPrompt, mode: 'consultant', image_list: refImages.map(img => img.image), size: "1024x1024" }) });
+        if (!googleApiKey) { setShowSettings(true); throw new Error("请先设置 Google API Key"); }
+        const res = await fetch('/api/google/consultant', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ apiKey: googleApiKey, model: models.consultant, prompt: optimizedPrompt, image_list: refImages.map(img => img.image), size: imageSize }) });
         if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error?.message || `失败 (${res.status})`); }
         const data = await res.json();
         if (!data.data?.[0]?.url) throw new Error("未返回有效图像");
@@ -303,18 +288,18 @@ export default function App() {
     if (!result || !maskBase64 || !editPrompt) return;
     setIsFinalGenerating(true); setError(null);
     try {
-      if (config.provider === 'hunyuan') {
-        if (!config.secretId || !config.secretKey) { setShowSettings(true); throw new Error("请先设置 SecretId"); }
-        const res = await fetch(config.baseUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ secretId: config.secretId, secretKey: config.secretKey, model: config.model, prompt: editPrompt, size: "1024:1024", image_list: [result.imageUrl, maskBase64] }) });
+      if (provider === 'hunyuan') {
+        if (!secretId || !secretKey) { setShowSettings(true); throw new Error("请先设置 SecretId"); }
+        const res = await fetch('/api/hunyuan/reedit', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ secretId, secretKey, model: models.reedit, prompt: editPrompt, size: "1024:1024", image_list: [result.imageUrl, maskBase64] }) });
         if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error?.message || `失败 (${res.status})`); }
         const data = await res.json();
         if (!data.data?.[0]?.url) throw new Error("未返回有效图像");
         setResult({ ...result, imageUrl: data.data[0].url });
       } else {
-        if (!config.googleApiKey) { setShowSettings(true); throw new Error("请先设置 Google API Key"); }
-        const res = await fetch('/api/google', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ apiKey: config.googleApiKey, prompt: editPrompt, mode: 'reedit', image_list: [result.imageUrl], maskImage: maskBase64, size: "1024x1024" }) });
+        if (!googleApiKey) { setShowSettings(true); throw new Error("请先设置 Google API Key"); }
+        const res = await fetch('/api/google/reedit', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ apiKey: googleApiKey, model: models.reedit, prompt: editPrompt, image_list: [result.imageUrl], maskImage: maskBase64, size: imageSize }) });
         if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error?.message || `失败 (${res.status})`); }
         const data = await res.json();
         if (!data.data?.[0]?.url) throw new Error("未返回有效图像");
@@ -330,18 +315,18 @@ export default function App() {
     if (!prompt) return;
     setIsGenerating(true); setError(null);
     try {
-      if (config.provider === 'hunyuan') {
-        if (!config.secretId || !config.secretKey) { setShowSettings(true); throw new Error("请先设置 SecretId"); }
-        const res = await fetch(config.baseUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ secretId: config.secretId, secretKey: config.secretKey, model: config.model, prompt: `设计一个位于大型展馆内的崂山茶文化展位：${prompt}。风格要求：自然、质朴、山海气息，专业展陈效果图、灯光层次丰富。`, size: "1024:1024", response_format: "url", image_list: [] }) });
+      if (provider === 'hunyuan') {
+        if (!secretId || !secretKey) { setShowSettings(true); throw new Error("请先设置 SecretId"); }
+        const res = await fetch('/api/hunyuan/t2i', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ secretId, secretKey, model: models.textToImage, prompt: `设计一个位于大型展馆内的崂山茶文化展位：${prompt}。风格要求：自然、质朴、山海气息，专业展陈效果图，灯光层次丰富。`, size: "1024:1024" }) });
         if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error?.message || `失败 (${res.status})`); }
         const data = await res.json();
         if (!data.data?.[0]?.url) throw new Error("未返回有效图像");
         setResult({ imageUrl: data.data[0].url, explanation: `基于您的灵感："${prompt}" 生成的崂山茶空间构想。` });
       } else {
-        if (!config.googleApiKey) { setShowSettings(true); throw new Error("请先设置 Google API Key"); }
-        const res = await fetch('/api/google', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ apiKey: config.googleApiKey, prompt, mode: 'generator', size: imageSize }) });
+        if (!googleApiKey) { setShowSettings(true); throw new Error("请先设置 Google API Key"); }
+        const res = await fetch('/api/google/t2i', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ apiKey: googleApiKey, model: models.textToImage, prompt, size: imageSize }) });
         if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error?.message || `失败 (${res.status})`); }
         const data = await res.json();
         if (!data.data?.[0]?.url) throw new Error("未返回有效图像");
@@ -351,6 +336,7 @@ export default function App() {
     finally { setIsGenerating(false); }
   };
 
+  const saveConfig = () => setShowSettings(false);
   const frontUrl = window.location.origin;
 
   return (
@@ -387,24 +373,18 @@ export default function App() {
 
               {activeTab === 'consultant' ? (
                 <div className="space-y-6">
-                  {/* 参考图列表 */}
+                  {/* 参考图 */}
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <label className="text-[11px] uppercase tracking-wider font-bold text-stone-500">参考图（可多张，点击命名）</label>
+                      <label className="text-[11px] uppercase tracking-wider font-bold text-stone-500">参考图（点击命名）</label>
                       <span className="text-[10px] text-stone-400">{refImages.length} 张</span>
                     </div>
-
                     <div className="grid grid-cols-3 gap-3">
                       {refImages.map((img, idx) => (
-                        <NamedImageCard key={img.id} img={img} idx={idx}
-                          onUpdateName={updateImageName} onRemove={removeImage} />
+                        <NamedImageCard key={img.id} img={img} idx={idx} onRename={renameImage} onRemove={removeImage} />
                       ))}
                       <DropZone onFiles={addImages} />
                     </div>
-
-                    {refImages.length === 0 && (
-                      <p className="text-xs text-stone-400 text-center py-2">暂无参考图，请上传</p>
-                    )}
                   </div>
 
                   {/* Prompt */}
@@ -414,7 +394,7 @@ export default function App() {
                       className="w-full h-40 p-4 rounded-2xl bg-white border border-stone-200 focus:border-stone-400 transition-all resize-none text-sm leading-relaxed" />
                   </div>
 
-                  {/* 阶段1: 开始分析 */}
+                  {/* 阶段1 */}
                   {!thinkingPhase && !result && (
                     <button onClick={handleStartThinking} disabled={refImages.length < 1 || isGenerating}
                       className={cn("w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all",
@@ -474,7 +454,7 @@ export default function App() {
                   <div className="space-y-2">
                     <label className="text-[11px] uppercase tracking-wider font-bold text-stone-500">输出分辨率</label>
                     <div className="flex gap-2">
-                      {([{ label: '2K', value: '2048x2048' }, { label: '4K', value: '4096x4096' }] as const).map((s) => (
+                      {([{ label: '2K', value: '2048x2048' }, { label: '4K', value: '4096x4096' }] as const).map(s => (
                         <button key={s.value} onClick={() => setImageSize(s.value)}
                           className={cn("flex-1 py-2 rounded-xl text-xs font-bold border transition-all",
                             imageSize === s.value ? "bg-stone-900 text-white border-stone-900" : "bg-white text-stone-500 border-stone-200 hover:border-stone-400")}>{s.label}</button>
@@ -485,7 +465,7 @@ export default function App() {
                     className={cn("w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all",
                       prompt && !isGenerating ? "bg-stone-900 text-white hover:bg-stone-800 shadow-lg shadow-stone-200"
                       : "bg-stone-200 text-stone-400 cursor-not-allowed")}>
-                    {isGenerating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}生成空间构想
+                    {isGenerating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Wand2 className="w-5 h-5" />}生成空间构想
                   </button>
                 </div>
               )}
@@ -508,7 +488,6 @@ export default function App() {
           {/* Right Column */}
           <div className="lg:col-span-7">
             <AnimatePresence mode="wait">
-              {/* 思考阶段：显示所有参考图 */}
               {thinkingPhase && !result && (
                 <motion.div key="thinking" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
                   <div className="grid grid-cols-2 gap-3">
@@ -516,9 +495,7 @@ export default function App() {
                       <div key={img.id} className="relative rounded-2xl overflow-hidden bg-white shadow-lg">
                         <img src={img.image} alt={img.name} className="w-full aspect-video object-cover" referrerPolicy="no-referrer" />
                         <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-black/60 text-white text-[10px] font-bold">#{idx+1}</div>
-                        <div className="p-2 border-t border-stone-100">
-                          <p className="text-xs font-medium text-stone-600 truncate">{img.name}</p>
-                        </div>
+                        <div className="p-2 border-t border-stone-100"><p className="text-xs font-medium text-stone-600 truncate">{img.name}</p></div>
                       </div>
                     ))}
                   </div>
@@ -530,7 +507,6 @@ export default function App() {
                 </motion.div>
               )}
 
-              {/* 生成中 */}
               {(isGenerating || isFinalGenerating) && !result && !thinkingPhase && (
                 <motion.div key="loading" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
                   className="aspect-[16/10] rounded-3xl bg-stone-200/50 flex flex-col items-center justify-center gap-4 p-12 text-center">
@@ -545,7 +521,6 @@ export default function App() {
                 </motion.div>
               )}
 
-              {/* 有结果 */}
               {result && (
                 <motion.div key="result" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="space-y-8">
                   <div className="relative group rounded-3xl overflow-hidden bg-white shadow-2xl shadow-stone-200">
@@ -596,13 +571,12 @@ export default function App() {
                 </motion.div>
               )}
 
-              {/* 空状态 */}
               {!result && !thinkingPhase && !isGenerating && !isFinalGenerating && (
                 <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                   className="aspect-[16/10] rounded-3xl border-2 border-dashed border-stone-200 flex flex-col items-center justify-center p-12 text-center">
                   <div className="w-20 h-20 rounded-full bg-stone-50 flex items-center justify-center mb-6"><Palette className="w-10 h-10 text-stone-200" /></div>
-                  <h3 className="text-xl font-serif font-bold text-stone-400">等待开启设计之旅</h3>
-                  <p className="text-sm text-stone-400 mt-2 max-w-xs">上传多张参考图，AI 将深度分析并生成专业展陈效果图</p>
+                  <h3 className="text-xl font-serif font-bold text-stone-400">{siteConfig.emptyTitle}</h3>
+                  <p className="text-sm text-stone-400 mt-2 max-w-xs">{siteConfig.emptyDesc}</p>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -615,58 +589,131 @@ export default function App() {
         {showSettings && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
-              onClick={() => setShowSettings(false)} className="absolute inset-0 bg-stone-900/40 backdrop-blur-sm" />
+              onClick={() => saveConfig()} className="absolute inset-0 bg-stone-900/40 backdrop-blur-sm" />
             <motion.div initial={{ opacity: 0, scale: 0.95, y: 20 }} animate={{ opacity: 1, scale: 1, y: 0 }} exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="relative w-full max-w-md bg-white rounded-3xl shadow-2xl overflow-hidden">
-              <div className="p-6 border-b border-stone-100 flex items-center justify-between">
+              className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+              <div className="p-6 border-b border-stone-100 flex items-center justify-between sticky top-0 bg-white z-10">
                 <h2 className="text-lg font-bold flex items-center gap-2"><Settings className="w-5 h-5 text-stone-600" /> API 配置</h2>
-                <button onClick={() => setShowSettings(false)} className="p-2 hover:bg-stone-100 rounded-full"><X className="w-5 h-5 text-stone-400" /></button>
+                <button onClick={() => saveConfig()} className="p-2 hover:bg-stone-100 rounded-full"><X className="w-5 h-5 text-stone-400" /></button>
               </div>
-              <div className="p-6 space-y-4">
+
+              <div className="p-6 space-y-6">
+                {/* URL 信息 */}
                 <div className="p-3 rounded-xl bg-stone-50 border border-stone-200 text-xs space-y-1">
                   <div className="flex justify-between"><span className="text-stone-500">Local:</span><span className="font-mono text-stone-700">http://localhost:{env.frontendPort}</span></div>
                   <div className="flex justify-between"><span className="text-stone-500">LAN:</span><span className="font-mono text-stone-700">{frontUrl}</span></div>
                 </div>
+
+                {/* 模型提供商切换 */}
                 <div className="space-y-1.5">
-                  <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">Model Provider</label>
+                  <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">模型提供商</label>
                   <div className="flex gap-3">
-                    <button onClick={() => setConfig({ ...config, provider: 'hunyuan' })}
-                      className={cn("flex-1 py-3 rounded-xl text-sm font-bold border transition-all",
-                        config.provider === 'hunyuan' ? "bg-stone-900 text-white border-stone-900" : "bg-white text-stone-500 border-stone-200 hover:border-stone-400")}>Tencent Hunyuan</button>
-                    <button onClick={() => setConfig({ ...config, provider: 'google' })}
-                      className={cn("flex-1 py-3 rounded-xl text-sm font-bold border transition-all",
-                        config.provider === 'google' ? "bg-stone-900 text-white border-stone-900" : "bg-white text-stone-500 border-stone-200 hover:border-stone-400")}>Google Gemini</button>
+                    {(['hunyuan', 'google'] as Provider[]).map(p => (
+                      <button key={p} onClick={() => {
+                        setProvider(p);
+                        setModels({
+                          textToImage: MODEL_OPTIONS[p].defaultModels.textToImage,
+                          think: MODEL_OPTIONS[p].defaultModels.think,
+                          consultant: MODEL_OPTIONS[p].defaultModels.consultant,
+                          reedit: MODEL_OPTIONS[p].defaultModels.reedit,
+                        });
+                      }}
+                        className={cn("flex-1 py-3 rounded-xl text-sm font-bold border transition-all",
+                          provider === p ? "bg-stone-900 text-white border-stone-900" : "bg-white text-stone-500 border-stone-200 hover:border-stone-400")}>
+                        {MODEL_OPTIONS[p].label}
+                      </button>
+                    ))}
                   </div>
                 </div>
-                {config.provider === 'hunyuan' ? (
-                  <>
-                    <div className="space-y-1.5"><label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">API URL</label>
-                      <input type="text" value={config.baseUrl} onChange={(e) => setConfig({ ...config, baseUrl: e.target.value })}
+
+                {/* 密钥 */}
+                {provider === 'hunyuan' ? (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5"><label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">SecretId</label>
+                      <input type="text" value={secretId} onChange={(e) => setSecretId(e.target.value)}
                         className="w-full px-4 py-2.5 rounded-xl bg-stone-50 border border-stone-200 focus:border-stone-400 outline-none text-sm font-mono" /></div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-1.5"><label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">SecretId</label>
-                        <input type="text" value={config.secretId} onChange={(e) => setConfig({ ...config, secretId: e.target.value })}
-                          className="w-full px-4 py-2.5 rounded-xl bg-stone-50 border border-stone-200 focus:border-stone-400 outline-none text-sm font-mono" /></div>
-                      <div className="space-y-1.5"><label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">SecretKey</label>
-                        <input type="password" value={config.secretKey} onChange={(e) => setConfig({ ...config, secretKey: e.target.value })}
-                          className="w-full px-4 py-2.5 rounded-xl bg-stone-50 border border-stone-200 focus:border-stone-400 outline-none text-sm font-mono" /></div>
-                    </div>
-                    <div className="space-y-1.5"><label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">Model</label>
-                      <input type="text" value={config.model} onChange={(e) => setConfig({ ...config, model: e.target.value })}
-                        className="w-full px-4 py-2.5 rounded-xl bg-stone-50 border border-stone-200 focus:border-stone-400 outline-none text-sm font-mono" />
-                      <p className="text-[10px] text-stone-400 italic">Tencent Hunyuan-Image-3.0-Instruct</p></div>
-                  </>
+                    <div className="space-y-1.5"><label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">SecretKey</label>
+                      <input type="password" value={secretKey} onChange={(e) => setSecretKey(e.target.value)}
+                        className="w-full px-4 py-2.5 rounded-xl bg-stone-50 border border-stone-200 focus:border-stone-400 outline-none text-sm font-mono" /></div>
+                  </div>
                 ) : (
                   <div className="space-y-1.5">
                     <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">Google API Key</label>
-                    <input type="password" value={config.googleApiKey} onChange={(e) => setConfig({ ...config, googleApiKey: e.target.value })}
+                    <input type="password" value={googleApiKey} onChange={(e) => setGoogleApiKey(e.target.value)}
                       className="w-full px-4 py-2.5 rounded-xl bg-stone-50 border border-stone-200 focus:border-stone-400 outline-none text-sm font-mono" />
-                    <p className="text-[10px] text-stone-400 italic">via /api/google - gemini-3-pro-image-preview (生成) / gemini-3.1-pro-preview (理解)</p>
                   </div>
                 )}
-                <div className="pt-4">
-                  <button onClick={() => saveConfig(config)}
-                    className="w-full py-4 bg-stone-900 text-white rounded-2xl font-bold text-sm hover:bg-stone-800 shadow-lg shadow-stone-200">Save Config</button>
+
+                {/* 4 个功能各自选模型 */}
+                <div className="border-t border-stone-100 pt-4 space-y-3">
+                  <p className="text-[10px] uppercase tracking-widest font-bold text-stone-400">各功能模型配置</p>
+
+                  <div className="bg-white rounded-2xl border border-stone-200 divide-y divide-stone-100 overflow-hidden">
+                    {/* 文生图 */}
+                    <div className="p-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Wand2 className="w-4 h-4 text-stone-400" />
+                        <span className="text-xs font-bold text-stone-700">文生图</span>
+                        <span className="text-[10px] text-stone-400 ml-auto">{provider === 'google' ? 'Google' : 'Hunyuan'}</span>
+                      </div>
+                      <ModelSelectRow
+                        label=""
+                        value={models.textToImage}
+                        options={modelOpts.models.textToImage}
+                        onChange={(v) => updateModel('textToImage', v)}
+                      />
+                    </div>
+
+                    {/* 多图理解 */}
+                    <div className="p-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Brain className="w-4 h-4 text-stone-400" />
+                        <span className="text-xs font-bold text-stone-700">多图理解 + Prompt 优化</span>
+                        <span className="text-[10px] text-stone-400 ml-auto">{provider === 'google' ? 'Google' : 'Hunyuan'}</span>
+                      </div>
+                      <ModelSelectRow
+                        label=""
+                        value={models.think}
+                        options={modelOpts.models.think}
+                        onChange={(v) => updateModel('think', v)}
+                      />
+                    </div>
+
+                    {/* 多图参考生图 */}
+                    <div className="p-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-stone-400" />
+                        <span className="text-xs font-bold text-stone-700">多图参考生图（展陈顾问）</span>
+                        <span className="text-[10px] text-stone-400 ml-auto">{provider === 'google' ? 'Google' : 'Hunyuan'}</span>
+                      </div>
+                      <ModelSelectRow
+                        label=""
+                        value={models.consultant}
+                        options={modelOpts.models.consultant}
+                        onChange={(v) => updateModel('consultant', v)}
+                      />
+                    </div>
+
+                    {/* Mask 编辑 */}
+                    <div className="p-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <RefreshCw className="w-4 h-4 text-stone-400" />
+                        <span className="text-xs font-bold text-stone-700">Mask 局部编辑</span>
+                        <span className="text-[10px] text-stone-400 ml-auto">{provider === 'google' ? 'Google' : 'Hunyuan'}</span>
+                      </div>
+                      <ModelSelectRow
+                        label=""
+                        value={models.reedit}
+                        options={modelOpts.models.reedit}
+                        onChange={(v) => updateModel('reedit', v)}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <button onClick={saveConfig}
+                    className="w-full py-4 bg-stone-900 text-white rounded-2xl font-bold text-sm hover:bg-stone-800 shadow-lg shadow-stone-200">保存配置</button>
                 </div>
               </div>
             </motion.div>
