@@ -264,8 +264,8 @@ export default function App() {
     finally { setIsGenerating(false); }
   };
 
-  const backUrl = `http://localhost:${env.backendPort}`;
-  const frontUrl = `http://localhost:${env.frontendPort}`;
+  // 前端地址：局域网其他成员用当前窗口的 origin 访问
+  const frontUrl = window.location.origin;
 
   return (
     <div className="min-h-screen bg-[#F5F2ED] text-stone-900 font-sans selection:bg-emerald-100">
@@ -448,10 +448,10 @@ export default function App() {
                 <button onClick={() => setShowSettings(false)} className="p-2 hover:bg-stone-100 rounded-full transition-colors"><X className="w-5 h-5 text-stone-400" /></button>
               </div>
               <div className="p-6 space-y-4">
-                {/* IP info */}
+                {/* Frontend URL for LAN access */}
                 <div className="p-3 rounded-xl bg-stone-50 border border-stone-200 text-xs space-y-1">
-                  <div className="flex justify-between"><span className="text-stone-500">Backend:</span><span className="font-mono text-stone-700">{backUrl}</span></div>
-                  <div className="flex justify-between"><span className="text-stone-500">Frontend:</span><span className="font-mono text-stone-700">{frontUrl}</span></div>
+                  <div className="flex justify-between"><span className="text-stone-500">Local:</span><span className="font-mono text-stone-700">http://localhost:{env.frontendPort}</span></div>
+                  <div className="flex justify-between"><span className="text-stone-500">LAN:</span><span className="font-mono text-stone-700">{frontUrl}</span></div>
                 </div>
                 {/* Provider */}
                 <div className="space-y-1.5">
