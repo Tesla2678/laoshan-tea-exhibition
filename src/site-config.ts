@@ -3,67 +3,24 @@
 // ============================================================
 
 // 4 个功能的模型选项
+// 每个功能只保留最强模型：Hunyuan vs Gemini 最强者对比
 export const MODEL_OPTIONS = {
   hunyuan: {
-    label: 'Tencent Hunyuan',
-    endpoints: {
-      textToImage: '/api/hunyuan/t2i',
-      think: '/api/hunyuan/think',
-      consultant: '/api/hunyuan/consultant',
-      reedit: '/api/hunyuan/reedit',
-    },
+    label: 'Tencent Hunyuan（最强）',
     models: {
-      textToImage: [
-        { value: 'hunyuan-image-3.0-instruct', label: 'Hunyuan-Image-3.0-Instruct（推荐）' },
-      ],
-      think: [
-        { value: 'hunyuan-vision-image-question', label: 'Hunyuan-Vision-Image-Question（多图理解）' },
-      ],
-      consultant: [
-        { value: 'hunyuan-image-3.0-instruct', label: 'Hunyuan-Image-3.0-Instruct（多图参考）' },
-      ],
-      reedit: [
-        { value: 'hunyuan-image-3.0-instruct', label: 'Hunyuan-Image-3.0-Instruct（局部重绘）' },
-      ],
-    },
-    defaultModels: {
-      textToImage: 'hunyuan-image-3.0-instruct',
-      think: 'hunyuan-vision-image-question',
-      consultant: 'hunyuan-image-3.0-instruct',
-      reedit: 'hunyuan-image-3.0-instruct',
+      textToImage:       [{ value: 'hunyuan-image-3.0-instruct', label: 'Hunyuan-Image-3.0-Instruct' }],
+      think:            [{ value: 'hunyuan-vision-image-question', label: 'Hunyuan-Vision-Image-Question' }],
+      consultant:        [{ value: 'hunyuan-image-3.0-instruct', label: 'Hunyuan-Image-3.0-Instruct' }],
+      reedit:           [{ value: 'hunyuan-image-3.0-instruct', label: 'Hunyuan-Image-3.0-Instruct' }],
     },
   },
   google: {
-    label: 'Google Gemini',
-    endpoints: {
-      textToImage: '/api/google/t2i',
-      think: '/api/google/think',
-      consultant: '/api/google/consultant',
-      reedit: '/api/google/reedit',
-    },
+    label: 'Google Gemini（最强）',
     models: {
-      textToImage: [
-        { value: 'gemini-3.1-flash-preview', label: 'Gemini-3.1-Flash-Preview（文生图）' },
-        { value: 'gemini-3.0-flash-preview', label: 'Gemini-3.0-Flash-Preview' },
-      ],
-      think: [
-        { value: 'gemini-3.1-pro-preview', label: 'Gemini-3.1-Pro-Preview（多图理解，推荐）' },
-        { value: 'gemini-2.5-flash-preview-05-20', label: 'Gemini-2.5-Flash-Preview' },
-      ],
-      consultant: [
-        { value: 'gemini-3-pro-image-preview', label: 'Gemini-3-Pro-Image-Preview（多图参考，推荐）' },
-        { value: 'gemini-2.5-flash-preview-05-20', label: 'Gemini-2.5-Flash-Preview' },
-      ],
-      reedit: [
-        { value: 'gemini-3-pro-image-preview', label: 'Gemini-3-Pro-Image-Preview（局部重绘，推荐）' },
-        { value: 'gemini-2.5-flash-preview-05-20', label: 'Gemini-2.5-Flash-Preview' },
-      ],
-    },
-    defaultModels: {
-      textToImage: 'gemini-3.1-flash-preview',
-      think: 'gemini-3.1-pro-preview',
-      consultant: 'gemini-3-pro-image-preview',
-      reedit: 'gemini-3-pro-image-preview',
+      textToImage:       [{ value: 'gemini-3-pro-image-preview', label: 'Gemini-3-Pro-Image-Preview' }],
+      think:              [{ value: 'gemini-3.1-pro-preview', label: 'Gemini-3.1-Pro-Preview' }],
+      consultant:         [{ value: 'gemini-3-pro-image-preview', label: 'Gemini-3-Pro-Image-Preview' }],
+      reedit:             [{ value: 'gemini-3-pro-image-preview', label: 'Gemini-3-Pro-Image-Preview' }],
     },
   },
 } as const;

@@ -654,7 +654,7 @@ export default function App() {
                       <div className="flex items-center gap-2">
                         <Wand2 className="w-4 h-4 text-stone-400" />
                         <span className="text-xs font-bold text-stone-700">文生图</span>
-                        <span className="text-[10px] text-stone-400 ml-auto">{provider === 'google' ? 'Google' : 'Hunyuan'}</span>
+                        <span className="text-[10px] text-stone-400 ml-auto">{provider === 'google' ? 'Google Gemini' : 'Tencent Hunyuan'}</span>
                       </div>
                       <ModelSelectRow
                         label=""
@@ -669,7 +669,7 @@ export default function App() {
                       <div className="flex items-center gap-2">
                         <Brain className="w-4 h-4 text-stone-400" />
                         <span className="text-xs font-bold text-stone-700">多图理解 + Prompt 优化</span>
-                        <span className="text-[10px] text-stone-400 ml-auto">{provider === 'google' ? 'Google' : 'Hunyuan'}</span>
+                        <span className="text-[10px] text-stone-400 ml-auto">{provider === 'google' ? 'Google Gemini' : 'Tencent Hunyuan'}</span>
                       </div>
                       <ModelSelectRow
                         label=""
@@ -684,7 +684,7 @@ export default function App() {
                       <div className="flex items-center gap-2">
                         <Sparkles className="w-4 h-4 text-stone-400" />
                         <span className="text-xs font-bold text-stone-700">多图参考生图（展陈顾问）</span>
-                        <span className="text-[10px] text-stone-400 ml-auto">{provider === 'google' ? 'Google' : 'Hunyuan'}</span>
+                        <span className="text-[10px] text-stone-400 ml-auto">{provider === 'google' ? 'Google Gemini' : 'Tencent Hunyuan'}</span>
                       </div>
                       <ModelSelectRow
                         label=""
@@ -699,7 +699,7 @@ export default function App() {
                       <div className="flex items-center gap-2">
                         <RefreshCw className="w-4 h-4 text-stone-400" />
                         <span className="text-xs font-bold text-stone-700">Mask 局部编辑</span>
-                        <span className="text-[10px] text-stone-400 ml-auto">{provider === 'google' ? 'Google' : 'Hunyuan'}</span>
+                        <span className="text-[10px] text-stone-400 ml-auto">{provider === 'google' ? 'Google Gemini' : 'Tencent Hunyuan'}</span>
                       </div>
                       <ModelSelectRow
                         label=""
