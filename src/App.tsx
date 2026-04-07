@@ -26,15 +26,25 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-// Vite env vars (from .env, prefixed with VITE_)
+// 密钥由 vite.config.ts define 直接注入全局，绕过 import.meta.env 加载问题
+declare global {
+  interface Window {
+    __SECRET_ID__: string;
+    __SECRET_KEY__: string;
+    __GOOGLE_API_KEY__: string;
+    __BACKEND_PORT__: string;
+    __FRONTEND_PORT__: string;
+  }
+}
+
 const env = {
-  siteTitle: import.meta.env.VITE_SITE_TITLE as string || siteConfig.siteTitle,
-  siteSubtitle: import.meta.env.VITE_SITE_SUBTITLE as string || siteConfig.siteSubtitle,
-  backendPort: import.meta.env.VITE_BACKEND_PORT as string || '3001',
-  frontendPort: import.meta.env.VITE_FRONTEND_PORT as string || '3000',
-  secretId: import.meta.env.VITE_SECRET_ID as string || '',
-  secretKey: import.meta.env.VITE_SECRET_KEY as string || '',
-  googleApiKey: import.meta.env.VITE_GOOGLE_API_KEY as string || '',
+  siteTitle: siteConfig.siteTitle,
+  siteSubtitle: siteConfig.siteSubtitle,
+  backendPort: window.__BACKEND_PORT__ || '3001',
+  frontendPort: window.__FRONTEND_PORT__ || '3000',
+  secretId: window.__SECRET_ID__ || '',
+  secretKey: window.__SECRET_KEY__ || '',
+  googleApiKey: window.__GOOGLE_API_KEY__ || '',
 };
 
 // --- Types ---
