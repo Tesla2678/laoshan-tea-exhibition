@@ -12,7 +12,7 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { siteConfig, FUNCTIONS } from './site-config';
+import { siteConfig, FUNCTIONS, buildConsultantPrompt } from './site-config';
 
 function cn(...inputs: ClassValue[]) { return twMerge(clsx(inputs)); }
 
@@ -67,8 +67,19 @@ const NamedImageCard = ({ img, idx, onRename, onRemove }: { img: RefImage; idx: 
 };
 
 // --- 拖拽上传 ---
-const DropZone = ({ onFiles }: { onFiles: (files: File[]) => void }) => {
+const DropZone = ({ onFiles, compact }: { onFiles: (files: File[]) => void; compact?: boolean }) => {
   const { getRootProps, getInputProps, isDragActive } = useDropzone({ onDrop: onFiles, accept: { 'image/*': [] }, multiple: true } as any);
+  if (compact) {
+    return (
+      <div {...getRootProps()}
+        className={cn("border-2 border-dashed rounded-2xl transition-all cursor-pointer flex items-center justify-center gap-2",
+          isDragActive ? "border-emerald-400 bg-emerald-50" : "border-stone-200 hover:border-stone-400 bg-stone-50/50")}
+        style={{ width: 80, height: 60 }}>
+        <input {...getInputProps()} />
+        <Plus className={cn("w-5 h-5", isDragActive ? "text-emerald-500" : "text-stone-400")} />
+      </div>
+    );
+  }
   return (
     <div {...getRootProps()}
       className={cn("border-2 border-dashed rounded-2xl transition-all cursor-pointer flex flex-col items-center justify-center gap-3 py-8",
@@ -169,7 +180,8 @@ export default function App() {
     reedit: FUNCTIONS.reedit.default,
   });
 
-  const [refImages, setRefImages] = useState<RefImage[]>([]);
+  const [structureImages, setStructureImages] = useState<RefImage[]>([]);
+  const [referenceImages, setReferenceImages] = useState<RefImage[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
   const [result, setResult] = useState<DesignResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -188,26 +200,44 @@ export default function App() {
 
   const updateModel = (func: FuncKey, v: string) => setModelMap(prev => ({ ...prev, [func]: v }));
 
-  const addImages = useCallback((files: File[]) => {
-    files.forEach(file => {
+  const addStructureImages = useCallback((files: File[]) => {
+    const startIdx = structureImages.length;
+    files.forEach((file, fi) => {
       const reader = new FileReader();
       reader.onload = () => {
-        setRefImages(prev => [...prev, {
+        setStructureImages(prev => [...prev, {
           id: `img-${Date.now()}-${Math.random().toString(36).slice(2)}`,
           image: reader.result as string,
-          name: file.name.replace(/\.[^.]+$/, '')
+          name: `structure ${startIdx + fi + 1}`
         }]);
       };
       reader.readAsDataURL(file);
     });
-  }, []);
+  }, [structureImages.length]);
+
+  const addReferenceImages = useCallback((files: File[]) => {
+    const startIdx = referenceImages.length;
+    files.forEach((file, fi) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setReferenceImages(prev => [...prev, {
+          id: `img-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          image: reader.result as string,
+          name: `reference ${startIdx + fi + 1}`
+        }]);
+      };
+      reader.readAsDataURL(file);
+    });
+  }, [referenceImages.length]);
 
   const renameImage = useCallback((id: string, name: string) => {
-    setRefImages(prev => prev.map(img => img.id === id ? { ...img, name } : img));
+    setStructureImages(prev => prev.map(img => img.id === id ? { ...img, name } : img));
+    setReferenceImages(prev => prev.map(img => img.id === id ? { ...img, name } : img));
   }, []);
 
   const removeImage = useCallback((id: string) => {
-    setRefImages(prev => prev.filter(img => img.id !== id));
+    setStructureImages(prev => prev.filter(img => img.id !== id));
+    setReferenceImages(prev => prev.filter(img => img.id !== id));
   }, []);
 
   const callGenerate = async (func: FuncKey, extra: Record<string, any> = {}) => {
@@ -225,15 +255,16 @@ export default function App() {
 
   // Step 1: 思考
   const handleStartThinking = async () => {
-    if (refImages.length < 1) return;
+    if (structureImages.length < 1) return;
     setIsGenerating(true); setThinkingPhase(true);
     setError(null); setOptimizedPrompt(''); setOptimizedExplanation('');
 
+    const allImages = [...structureImages, ...referenceImages];
     try {
       const data = await callGenerate('think', {
         prompt: consultantPrompt,
-        image_list: refImages.map(img => img.image),
-        image_names: refImages.map(img => img.name),
+        image_list: allImages.map(img => img.image),
+        image_names: allImages.map(img => img.name),
       });
       setOptimizedPrompt(data.optimizedPrompt || consultantPrompt);
       setOptimizedExplanation(data.explanation || '');
@@ -247,10 +278,11 @@ export default function App() {
     setIsFinalGenerating(true); setThinkingPhase(false);
     setError(null); setResult(null); setIsBrushMode(false); setMaskBase64(null);
 
+    const allImages = [...structureImages, ...referenceImages];
     try {
       const data = await callGenerate('consultant', {
         prompt: optimizedPrompt,
-        image_list: refImages.map(img => img.image),
+        image_list: allImages.map(img => img.image),
         size: imageSize,
       });
       const imageUrl = data.data?.[0]?.url || (data.data?.[0]?.b64_json ? `data:image/png;base64,${data.data[0].b64_json}` : null);
@@ -332,42 +364,65 @@ export default function App() {
 
               {activeTab === 'consultant' ? (
                 <div className="space-y-6">
-                  {/* 参考图 */}
+                  {/* 结构参考图 */}
                   <div className="space-y-3">
                     <div className="flex items-center justify-between">
-                      <label className="text-[11px] uppercase tracking-wider font-bold text-stone-500">参考图（点击命名）</label>
-                      <span className="text-[10px] text-stone-400">{refImages.length} 张</span>
+                      <label className="text-[11px] uppercase tracking-wider font-bold text-stone-500">结构参考图</label>
+                      <span className="text-[10px] text-stone-400">{structureImages.length} 张</span>
                     </div>
-                    <div className="grid grid-cols-3 gap-3">
-                      {refImages.map((img, idx) => (
+                    <div className="flex flex-wrap gap-3">
+                      {structureImages.map((img, idx) => (
                         <NamedImageCard key={img.id} img={img} idx={idx} onRename={renameImage} onRemove={removeImage} />
                       ))}
-                      <DropZone onFiles={addImages} />
+                      <DropZone onFiles={addStructureImages} compact />
+                    </div>
+                  </div>
+
+                  {/* 风格参考图 */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] uppercase tracking-wider font-bold text-stone-500">风格参考图</label>
+                      <span className="text-[10px] text-stone-400">{referenceImages.length} 张</span>
+                    </div>
+                    <div className="flex flex-wrap gap-3">
+                      {referenceImages.map((img, idx) => (
+                        <NamedImageCard key={img.id} img={img} idx={idx} onRename={renameImage} onRemove={removeImage} />
+                      ))}
+                      <DropZone onFiles={addReferenceImages} compact />
                     </div>
                   </div>
 
                   {/* Prompt */}
                   <div className="space-y-2">
-                    <label className="text-[11px] uppercase tracking-wider font-bold text-stone-500">设计指令 Prompt</label>
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] uppercase tracking-wider font-bold text-stone-500">设计指令 Prompt</label>
+                      <button onClick={() => {
+                        const defaultPrompt = buildConsultantPrompt(structureImages.length, referenceImages.length);
+                        setConsultantPrompt(defaultPrompt);
+                      }}
+                        className="text-[10px] px-3 py-1 rounded-full bg-amber-100 text-amber-600 hover:bg-amber-200 font-medium transition-all">
+                        恢复默认指令
+                      </button>
+                    </div>
                     <textarea value={consultantPrompt} onChange={(e) => setConsultantPrompt(e.target.value)}
                       className="w-full h-40 p-4 rounded-2xl bg-white border border-stone-200 focus:border-stone-400 transition-all resize-none text-sm leading-relaxed" />
                   </div>
 
                   {!thinkingPhase && !result && (
-                    <button onClick={handleStartThinking} disabled={refImages.length < 1 || isGenerating}
+                    <button onClick={handleStartThinking} disabled={structureImages.length < 1 || isGenerating}
                       className={cn("w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all",
-                        refImages.length >= 1 && !isGenerating ? "bg-stone-900 text-white hover:bg-stone-800 shadow-lg shadow-stone-200"
+                        structureImages.length >= 1 && !isGenerating ? "bg-stone-900 text-white hover:bg-stone-800 shadow-lg shadow-stone-200"
                         : "bg-stone-200 text-stone-400 cursor-not-allowed")}>
                       {isGenerating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Brain className="w-5 h-5" />}
                       AI 深度分析 + 优化设计指令
-                    </button>
-                  )}
+                    </button>)
+                  }
 
                   {thinkingPhase && !result && (
                     <div className="space-y-3">
                       <div className="p-4 rounded-2xl bg-amber-50 border border-amber-100 flex items-center gap-3">
                         <Loader2 className="w-5 h-5 text-amber-500 animate-spin flex-shrink-0" />
-                        <p className="text-sm text-amber-700">正在深度分析 {refImages.length} 张图片，优化设计指令...</p>
+                        <p className="text-sm text-amber-700">正在深度分析 {structureImages.length + referenceImages.length} 张图片，优化设计指令...</p>
                       </div>
                       <button disabled className="w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-2 bg-stone-200 text-stone-400 cursor-not-allowed">
                         <Loader2 className="w-5 h-5 animate-spin" /> 分析中，请稍候
@@ -447,7 +502,7 @@ export default function App() {
               {thinkingPhase && !result && (
                 <motion.div key="thinking" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="space-y-4">
                   <div className="grid grid-cols-2 gap-3">
-                    {refImages.map((img, idx) => (
+                    {[...structureImages, ...referenceImages].map((img, idx) => (
                       <div key={img.id} className="relative rounded-2xl overflow-hidden bg-white shadow-lg">
                         <img src={img.image} alt={img.name} className="w-full aspect-video object-cover" referrerPolicy="no-referrer" />
                         <div className="absolute top-2 left-2 px-2 py-0.5 rounded-full bg-black/60 text-white text-[10px] font-bold">#{idx+1}</div>
@@ -457,7 +512,7 @@ export default function App() {
                   </div>
                   <div className="p-6 rounded-3xl bg-amber-50 border border-amber-100 text-center">
                     <Brain className="w-8 h-8 text-amber-400 mx-auto mb-2" />
-                    <p className="text-sm font-bold text-amber-700">AI 正在深度分析 {refImages.length} 张参考图...</p>
+                    <p className="text-sm font-bold text-amber-700">AI 正在深度分析 {structureImages.length + referenceImages.length} 张参考图...</p>
                     <p className="text-xs text-amber-500 mt-1">结合您的设计指令，生成最优化的展陈方案</p>
                   </div>
                 </motion.div>
