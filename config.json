@@ -1,0 +1,15 @@
+{
+  "secretId": "AKIDGWimopoocEetxqX3QbZLxNcOziNDwgR4",
+  "secretKey": "Yt1xgFdpqgLn25yfGf3FF3gEbnndHhvz",
+  "apiKeys": [
+    "AIzaSyDnICh0DAaYqbOf6HQnFHaeLttO4mbcPww",
+    "AIzaSyAZ_bYiu2yP7oFzMZT7AeAGr6w8Xqdn1Wg"
+  ],
+  "modelMap": {
+    "textToImage": "gemini-3-pro-image-preview",
+    "think": "gemini-3.1-pro-preview",
+    "consultant": "gemini-3-pro-image-preview",
+    "reedit": "hunyuan-image-3.0-instruct"
+  },
+  "autoMode": true
+}

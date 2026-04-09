@@ -536,11 +536,13 @@ export default function App() {
                   <div className="space-y-2">
                     <label className="text-[11px] uppercase tracking-wider font-bold text-stone-500">输出分辨率</label>
                     <div className="flex gap-2">
-                      {([{ label: '2K', value: '2048x2048' }, { label: '4K', value: '4096x4096' }] as const).map(s => (
-                        <button key={s.value} onClick={() => setImageSize(s.value)}
-                          className={cn("flex-1 py-2 rounded-xl text-xs font-bold border transition-all",
-                            imageSize === s.value ? "bg-stone-900 text-white border-stone-900" : "bg-white text-stone-500 border-stone-200 hover:border-stone-400")}>{s.label}</button>
-                      ))}
+                      {modelMap['textToImage']?.startsWith('hunyuan')
+                        ? <div className="flex-1 py-2 rounded-xl text-xs font-bold border border-stone-200 bg-stone-50 text-stone-400 text-center">1024×1024（固定）</div>
+                        : ([{ label: '2K', value: '2048x2048' }, { label: '4K', value: '4096x4096' }] as const).map(s => (
+                          <button key={s.value} onClick={() => setImageSize(s.value)}
+                            className={cn("flex-1 py-2 rounded-xl text-xs font-bold border transition-all",
+                              imageSize === s.value ? "bg-stone-900 text-white border-stone-900" : "bg-white text-stone-500 border-stone-200 hover:border-stone-400")}>{s.label}</button>
+                        ))}
                     </div>
                   </div>
                   <button onClick={handleGenerateFromScratch} disabled={!prompt || isGenerating}

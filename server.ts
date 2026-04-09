@@ -199,7 +199,12 @@ app.post('/api/generate', async (req, res) => {
     if (!id || !key) return res.status(400).json({ error: { message: meta.errorMessages?.missingTencentKey || '缺少腾讯云 SecretId 或 SecretKey' } });
 
     let resolution = "1024:1024";
-    if (size && typeof size === 'string' && size.includes('x')) resolution = size.replace('x', ':');
+    if (size && typeof size === 'string' && size.includes('x')) {
+      resolution = size.replace('x', ':');
+      // Hunyuan 文生图仅支持 [512, 2048] 范围且乘积 ≤ 1024*1024，超出则强制降为 1024:1024
+      const [w, h] = resolution.split(':').map(Number);
+      if (w > 2048 || h > 2048 || w * h > 1024 * 1024) resolution = '1024:1024';
+    }
 
     try {
       if (func === 'think') {
