@@ -197,6 +197,7 @@ export default function App() {
   const [optimizedPrompt, setOptimizedPrompt] = useState('');
   const [optimizedExplanation, setOptimizedExplanation] = useState('');
   const [isFinalGenerating, setIsFinalGenerating] = useState(false);
+  const [autoMode, setAutoMode] = useState(true);
 
   const updateModel = (func: FuncKey, v: string) => setModelMap(prev => ({ ...prev, [func]: v }));
 
@@ -266,13 +267,39 @@ export default function App() {
         image_list: allImages.map(img => img.image),
         image_names: allImages.map(img => img.name),
       });
-      setOptimizedPrompt(data.optimizedPrompt || consultantPrompt);
+      const opt = data.optimizedPrompt || consultantPrompt;
+      setOptimizedPrompt(opt);
       setOptimizedExplanation(data.explanation || '');
+
+      if (autoMode) {
+        // 自动模式：优化后直接生图
+        setIsGenerating(false);
+        await handleAutoGenerate(opt, allImages);
+      }
+      // 非自动模式：停在优化结果页面，等待用户确认
     } catch (err: any) { setError(err.message); setThinkingPhase(false); }
     finally { setIsGenerating(false); }
   };
 
-  // Step 2: 生图
+
+  // 自动生图（优化后直接调用，不需要用户确认）
+  const handleAutoGenerate = async (promptToUse: string, allImages: RefImage[]) => {
+    setIsFinalGenerating(true); setThinkingPhase(false);
+    setError(null); setResult(null);
+    try {
+      const data = await callGenerate('consultant', {
+        prompt: promptToUse,
+        image_list: allImages.map(img => img.image),
+        size: imageSize,
+      });
+      const imageUrl = data.data?.[0]?.url || (data.data?.[0]?.b64_json ? `data:image/png;base64,${data.data[0].b64_json}` : null);
+      if (!imageUrl) throw new Error("未返回有效图像");
+      setResult({ imageUrl, explanation: optimizedExplanation || data.data?.[0]?.revised_prompt || "生成成功。" });
+    } catch (err: any) { setError(err.message); }
+    finally { setIsFinalGenerating(false); }
+  };
+
+  // Step 2: 生图（手动确认模式）
   const handleConfirmGenerate = async () => {
     if (!optimizedPrompt) return;
     setIsFinalGenerating(true); setThinkingPhase(false);
@@ -542,6 +569,15 @@ export default function App() {
                       <>
                         <img src={result.imageUrl} alt="Result" className="w-full h-auto" referrerPolicy="no-referrer" />
                         <div className="absolute top-4 right-4 flex gap-2">
+                          <button onClick={() => {
+                            const link = document.createElement('a');
+                            link.href = result.imageUrl; link.download = 'laoshan-design.png'; link.click();
+                          }}
+                            className="px-3 py-1.5 rounded-full bg-white/80 backdrop-blur-md text-[10px] font-bold text-stone-900 flex items-center gap-2 hover:bg-white">
+                            <Upload className="w-3 h-3" /> 保存</button>
+                          <button onClick={() => navigator.clipboard.writeText(result.imageUrl)}
+                            className="px-3 py-1.5 rounded-full bg-white/80 backdrop-blur-md text-[10px] font-bold text-stone-900 flex items-center gap-2 hover:bg-white">
+                            复制链接</button>
                           <button onClick={() => setIsBrushMode(true)}
                             className="px-3 py-1.5 rounded-full bg-white/80 backdrop-blur-md text-[10px] font-bold text-stone-900 flex items-center gap-2 hover:bg-white">
                             <RefreshCw className="w-3 h-3" /> 局部重绘</button>
@@ -657,6 +693,27 @@ export default function App() {
                     ))}
                   </div>
                 </div>
+
+                {/* Prompt 模式切换 */}
+                <div className="border-t border-stone-100 pt-4 space-y-2">
+                  <p className="text-[10px] uppercase tracking-widest font-bold text-stone-400">Prompt 优化后</p>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => setAutoMode(true)}
+                      className={cn("flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all",
+                        autoMode ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-stone-500 border-stone-200 hover:border-stone-400")}>
+                      自动生成图片
+                    </button>
+                    <button onClick={() => setAutoMode(false)}
+                      className={cn("flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all",
+                        !autoMode ? "bg-amber-600 text-white border-amber-600" : "bg-white text-stone-500 border-stone-200 hover:border-stone-400")}>
+                      显示结果并确认
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-stone-400 mt-1">
+                    {autoMode ? "优化后自动生成，无需手动确认" : "显示优化结果，用户手动点击确认后生成"}
+                  </p>
+                </div>
+
 
                 <div className="pt-2">
                   <button onClick={saveConfig}
