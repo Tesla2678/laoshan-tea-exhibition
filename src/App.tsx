@@ -170,9 +170,21 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [secretId, setSecretId] = useState(env.secretId);
   const [secretKey, setSecretKey] = useState(env.secretKey);
-  const [googleApiKey, setGoogleApiKey] = useState(env.googleApiKey);
+  const [apiKeys, setApiKeys] = useState<string[]>([]);
 
-  // 每个功能独立选模型
+  // 初始化：从后端加载已保存的配置
+  useEffect(() => {
+    fetch('/api/config')
+      .then(r => r.json())
+      .then(cfg => {
+        if (cfg.secretId) setSecretId(cfg.secretId);
+        if (cfg.secretKey) setSecretKey(cfg.secretKey);
+        if (cfg.apiKeys && Array.isArray(cfg.apiKeys)) setApiKeys(cfg.apiKeys);
+        if (cfg.modelMap) setModelMap(cfg.modelMap);
+        if (typeof cfg.autoMode === 'boolean') setAutoMode(cfg.autoMode);
+      })
+      .catch(() => { /* ignore */ });
+  }, []);
   const [modelMap, setModelMap] = useState<Record<FuncKey, string>>({
     textToImage: FUNCTIONS.textToImage.default,
     think: FUNCTIONS.think.default,
@@ -247,7 +259,7 @@ export default function App() {
     const model = modelMap[func];
     const res = await fetch('/api/generate', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ func, model, secretId, secretKey, apiKey: googleApiKey, ...extra })
+      body: JSON.stringify({ func, model, secretId, secretKey, apiKey: apiKeys.join(','), ...extra })
     });
     if (!res.ok) {
       const e = await res.json().catch(() => ({}));
@@ -356,7 +368,16 @@ export default function App() {
     finally { setIsGenerating(false); }
   };
 
-  const saveConfig = () => setShowSettings(false);
+  const saveConfig = async () => {
+    try {
+      await fetch('/api/save-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ secretId, secretKey, apiKeys, modelMap, autoMode }),
+      });
+    } catch { /* ignore */ }
+    setShowSettings(false);
+  };
   const frontUrl = window.location.origin;
 
   return (
@@ -670,9 +691,10 @@ export default function App() {
                       className="w-full px-4 py-2.5 rounded-xl bg-stone-50 border border-stone-200 focus:border-stone-400 outline-none text-sm font-mono" /></div>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">Google API Key</label>
-                  <input type="password" value={googleApiKey} onChange={(e) => setGoogleApiKey(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-xl bg-stone-50 border border-stone-200 focus:border-stone-400 outline-none text-sm font-mono" />
+                  <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">Google API Keys<span className="ml-1 text-amber-500 font-normal">(多key逗号分隔，自动切换)</span></label>
+                  <textarea value={apiKeys.join(', ')} onChange={(e) => setApiKeys(e.target.value.split(',').map(k => k.trim()).filter(Boolean))}
+                    className="w-full px-4 py-2.5 rounded-xl bg-stone-50 border border-stone-200 focus:border-stone-400 outline-none text-sm font-mono resize-none" rows={2}
+                    placeholder="key1, key2, key3..." />
                 </div>
 
                 {/* 4 个功能独立选模型 */}
