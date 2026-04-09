@@ -357,7 +357,7 @@ export default function App() {
     if (!prompt) return;
     setIsGenerating(true); setError(null);
     try {
-      const data = await callGenerate('textToImage', {
+      const data = await callGenerate('t2i', {
         prompt: `设计一个位于大型展馆内的崂山茶文化展位：${prompt}。风格要求：自然、质朴、山海气息，专业展陈效果图，灯光层次丰富。`,
         size: imageSize,
       });
