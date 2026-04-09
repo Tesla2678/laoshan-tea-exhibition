@@ -186,7 +186,9 @@ export default function App() {
   const [result, setResult] = useState<DesignResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'consultant' | 'generator'>('consultant');
-  const [consultantPrompt, setConsultantPrompt] = useState(siteConfig.defaultConsultantPrompt);
+  const [consultantPrompt, setConsultantPrompt] = useState(
+    localStorage.getItem('defaultConsultantPrompt') || siteConfig.defaultConsultantPrompt
+  );
   const [prompt, setPrompt] = useState('');
   const [imageSize, setImageSize] = useState<string>('2048x2048');
   const [isBrushMode, setIsBrushMode] = useState(false);
@@ -423,19 +425,26 @@ export default function App() {
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <label className="text-[11px] uppercase tracking-wider font-bold text-stone-500">设计指令 Prompt</label>
-                      <button onClick={() => {
-                        const defaultPrompt = buildConsultantPrompt(structureImages.length, referenceImages.length);
-                        setConsultantPrompt(defaultPrompt);
-                      }}
-                        className="text-[10px] px-3 py-1 rounded-full bg-amber-100 text-amber-600 hover:bg-amber-200 font-medium transition-all">
-                        恢复默认指令
-                      </button>
+                      <div className="flex gap-2">
+                        <button onClick={() => {
+                          localStorage.setItem('defaultConsultantPrompt', consultantPrompt);
+                        }}
+                          className="text-[10px] px-3 py-1 rounded-full bg-emerald-100 text-emerald-600 hover:bg-emerald-200 font-medium transition-all">
+                          设为默认
+                        </button>
+                        <button onClick={() => {
+                          setConsultantPrompt(localStorage.getItem('defaultConsultantPrompt') || siteConfig.defaultConsultantPrompt);
+                        }}
+                          className="text-[10px] px-3 py-1 rounded-full bg-amber-100 text-amber-600 hover:bg-amber-200 font-medium transition-all">
+                          恢复默认
+                        </button>
+                      </div>
                     </div>
                     <textarea value={consultantPrompt} onChange={(e) => setConsultantPrompt(e.target.value)}
                       className="w-full h-40 p-4 rounded-2xl bg-white border border-stone-200 focus:border-stone-400 transition-all resize-none text-sm leading-relaxed" />
                   </div>
 
-                  {!thinkingPhase && !result && (
+                  {!isGenerating && !thinkingPhase && (
                     <button onClick={handleStartThinking} disabled={structureImages.length < 1 || isGenerating}
                       className={cn("w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all",
                         structureImages.length >= 1 && !isGenerating ? "bg-stone-900 text-white hover:bg-stone-800 shadow-lg shadow-stone-200"
