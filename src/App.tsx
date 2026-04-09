@@ -395,8 +395,8 @@ export default function App() {
         <div className="max-w-6xl mx-auto px-6 h-20 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 bg-stone-900 rounded-lg flex items-center justify-center"><Palette className="text-white w-6 h-6" /></div>
-            <div><h1 className="text-xl font-serif font-bold tracking-tight">{env.siteTitle}</h1>
-              <p className="text-[10px] uppercase tracking-widest text-stone-500 font-semibold">{env.siteSubtitle}</p></div>
+            <div><h1 className="text-xl font-serif font-bold tracking-tight">{(metadata as any)?.siteTitle || env.siteTitle}</h1>
+              <p className="text-[10px] uppercase tracking-widest text-stone-500 font-semibold">{(metadata as any)?.siteSubtitle || env.siteSubtitle}</p></div>
           </div>
           <div className="flex items-center gap-4">
             <nav className="flex gap-1 bg-stone-100 p-1 rounded-full">
