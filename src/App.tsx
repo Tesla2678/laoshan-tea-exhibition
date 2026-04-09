@@ -218,7 +218,7 @@ export default function App() {
   const [optimizedExplanation, setOptimizedExplanation] = useState('');
   const [isFinalGenerating, setIsFinalGenerating] = useState(false);
   const [autoMode, setAutoMode] = useState(true);
-  const [skipPromptOptimization, setSkipPromptOptimization] = useState(false);
+  const [skipPromptOptimization, setSkipPromptOptimization] = useState(true);
 
   const updateModel = (func: FuncKey, v: string) => setModelMap(prev => ({ ...prev, [func]: v }));
 

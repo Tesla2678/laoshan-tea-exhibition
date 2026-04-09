@@ -8,5 +8,6 @@
     "consultant": "hunyuan-image-3.0-instruct",
     "reedit": "hunyuan-image-3.0-instruct"
   },
-  "autoMode": true
+  "autoMode": true,
+  "skipPromptOptimization": true
 }
