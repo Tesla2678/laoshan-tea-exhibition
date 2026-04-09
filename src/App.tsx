@@ -185,6 +185,7 @@ export default function App() {
       if (cfg.apiKeys && Array.isArray(cfg.apiKeys)) setApiKeys(cfg.apiKeys);
       if (cfg.modelMap) setModelMap(cfg.modelMap);
       if (typeof cfg.autoMode === 'boolean') setAutoMode(cfg.autoMode);
+  if (typeof cfg.skipPromptOptimization === 'boolean') setSkipPromptOptimization(cfg.skipPromptOptimization);
       // consultantPrompt 初始化：优先读 metadata，再读 localStorage
       const defaultPrompt = meta?.prompts?.defaultConsultant || localStorage.getItem('defaultConsultantPrompt') || meta?.prompts?.defaultConsultant || '';
       if (defaultPrompt) setConsultantPrompt(defaultPrompt);
@@ -217,6 +218,7 @@ export default function App() {
   const [optimizedExplanation, setOptimizedExplanation] = useState('');
   const [isFinalGenerating, setIsFinalGenerating] = useState(false);
   const [autoMode, setAutoMode] = useState(true);
+  const [skipPromptOptimization, setSkipPromptOptimization] = useState(false);
 
   const updateModel = (func: FuncKey, v: string) => setModelMap(prev => ({ ...prev, [func]: v }));
 
@@ -281,14 +283,23 @@ export default function App() {
 
     const allImages = [...structureImages, ...referenceImages];
     try {
-      const data = await callGenerate('think', {
-        prompt: consultantPrompt,
-        image_list: allImages.map(img => img.image),
-        image_names: allImages.map(img => img.name),
-      });
-      const opt = data.optimizedPrompt || consultantPrompt;
-      setOptimizedPrompt(opt);
-      setOptimizedExplanation(data.explanation || '');
+      let opt = consultantPrompt;
+      let explanation = '';
+
+      if (!skipPromptOptimization) {
+        const data = await callGenerate('think', {
+          prompt: consultantPrompt,
+          image_list: allImages.map(img => img.image),
+          image_names: allImages.map(img => img.name),
+        });
+        opt = data.optimizedPrompt || consultantPrompt;
+        explanation = data.explanation || '';
+        setOptimizedPrompt(opt);
+        setOptimizedExplanation(explanation);
+      } else {
+        setOptimizedPrompt(consultantPrompt);
+        setOptimizedExplanation('');
+      }
 
       if (autoMode) {
         // 自动模式：优化后直接生图
@@ -381,7 +392,7 @@ export default function App() {
       await fetch('/api/save-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ secretId, secretKey, apiKeys, modelMap, autoMode }),
+        body: JSON.stringify({ secretId, secretKey, apiKeys, modelMap, autoMode, skipPromptOptimization }),
       });
     } catch { /* ignore */ }
     setShowSettings(false);
@@ -739,6 +750,26 @@ export default function App() {
                       </div>
                     ))}
                   </div>
+                </div>
+
+                {/* 多图生图模式 */}
+                <div className="border-t border-stone-100 pt-4 space-y-2">
+                  <p className="text-[10px] uppercase tracking-widest font-bold text-stone-400">多图生图模式</p>
+                  <div className="flex items-center gap-3">
+                    <button onClick={() => setSkipPromptOptimization(false)}
+                      className={cn("flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all",
+                        !skipPromptOptimization ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-stone-500 border-stone-200 hover:border-stone-400")}>
+                      优化 Prompt 后生成
+                    </button>
+                    <button onClick={() => setSkipPromptOptimization(true)}
+                      className={cn("flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all",
+                        skipPromptOptimization ? "bg-amber-600 text-white border-amber-600" : "bg-white text-stone-500 border-stone-200 hover:border-stone-400")}>
+                      直接使用关键词
+                    </button>
+                  </div>
+                  <p className="text-[10px] text-stone-400 mt-1">
+                    {skipPromptOptimization ? "跳过 think 优化步骤，直接用关键词调用图生图" : "先通过 think 模型优化 Prompt，再生成图片"}
+                  </p>
                 </div>
 
                 {/* Prompt 模式切换 */}

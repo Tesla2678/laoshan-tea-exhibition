@@ -1,14 +1,11 @@
 {
-  "secretId": "AKIDGWimopoocEetxqX3QbZLxNcOziNDwgR4",
-  "secretKey": "Yt1xgFdpqgLn25yfGf3FF3gEbnndHhvz",
-  "apiKeys": [
-    "AIzaSyDnICh0DAaYqbOf6HQnFHaeLttO4mbcPww",
-    "AIzaSyAZ_bYiu2yP7oFzMZT7AeAGr6w8Xqdn1Wg"
-  ],
+  "secretId": "admin",
+  "secretKey": "prom-operator",
+  "apiKeys": [],
   "modelMap": {
-    "textToImage": "gemini-3-pro-image-preview",
-    "think": "gemini-3.1-pro-preview",
-    "consultant": "gemini-3-pro-image-preview",
+    "textToImage": "hunyuan-image-3.0-instruct",
+    "think": "hunyuan-vision-image-question",
+    "consultant": "hunyuan-image-3.0-instruct",
     "reedit": "hunyuan-image-3.0-instruct"
   },
   "autoMode": true
