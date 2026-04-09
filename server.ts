@@ -13,16 +13,26 @@ const HunyuanClient = tencentcloud.hunyuan.v20230901.Client;
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 const PORT = process.env.PORT || 3001;
 const CONFIG_FILE = './config.json';
+const METADATA_FILE = './metadata.json';
 
 function stripBase64(data: string) { return data.replace(/^data:image\/\w+;base64,/, ''); }
 function routeProvider(model: string) { return (model || '').startsWith('hunyuan') ? 'hunyuan' : 'google'; }
 
-// --- Load persisted config ---
+// --- Load persisted config (keys + model selection) ---
 function loadConfig() {
   try {
     if (fs.existsSync(CONFIG_FILE)) {
-      const raw = fs.readFileSync(CONFIG_FILE, 'utf8');
-      return JSON.parse(raw);
+      return JSON.parse(fs.readFileSync(CONFIG_FILE, 'utf8'));
+    }
+  } catch { /* ignore */ }
+  return {};
+}
+
+// --- Load metadata (all configurable UI text + prompts) ---
+function loadMetadata() {
+  try {
+    if (fs.existsSync(METADATA_FILE)) {
+      return JSON.parse(fs.readFileSync(METADATA_FILE, 'utf8'));
     }
   } catch { /* ignore */ }
   return {};
@@ -46,39 +56,49 @@ async function fetchWithTimeout(url: string, opts: RequestInit & { timeout?: num
 }
 
 // ============================================================
-// GET  /api/config   — load persisted config
+// Public APIs
+// GET  /api/config      — load persisted config (keys + models)
 // POST /api/save-config — save config to file
+// GET  /api/metadata    — load all configurable text + prompts
+// POST /api/save-prompt — save custom default prompt to metadata.json
 // ============================================================
-app.get('/api/config', (_req, res) => {
-  res.json(loadConfig());
-});
+app.get('/api/config', (_req, res) => { res.json(loadConfig()); });
 
 app.post('/api/save-config', (req, res) => {
   const { secretId, secretKey, apiKeys, modelMap, autoMode } = req.body;
   try {
     fs.writeFileSync(CONFIG_FILE, JSON.stringify({ secretId, secretKey, apiKeys, modelMap, autoMode }, null, 2));
     res.json({ ok: true });
-  } catch (err: any) {
-    res.status(500).json({ error: { message: err.message } });
-  }
+  } catch (err: any) { res.status(500).json({ error: { message: err.message } }); }
+});
+
+app.get('/api/metadata', (_req, res) => { res.json(loadMetadata()); });
+
+app.post('/api/save-prompt', (req, res) => {
+  const { defaultConsultantPrompt } = req.body;
+  try {
+    const meta = loadMetadata();
+    meta.prompts = meta.prompts || {};
+    meta.prompts.defaultConsultant = defaultConsultantPrompt;
+    fs.writeFileSync(METADATA_FILE, JSON.stringify(meta, null, 2));
+    res.json({ ok: true });
+  } catch (err: any) { res.status(500).json({ error: { message: err.message } }); }
 });
 
 // ============================================================
 // POST /api/generate
-// func: t2i | think | consultant | reedit
-// model: 模型名（自动路由到对应厂商）
+// func: textToImage | think | consultant | reedit
 // ============================================================
 app.post('/api/generate', async (req, res) => {
   const { func, model, prompt, image_list, maskImage, image_names, size, secretId, secretKey, apiKey } = req.body;
   const provider = routeProvider(model || '');
   const timeout = (func === 'consultant' || func === 'reedit') ? 120000 : 60000;
+  const meta = loadMetadata();
 
   if (provider === 'google') {
     const baseKeys = (apiKey || process.env.GEMINI_API_KEY || '')
-      .split(',')
-      .map((k: string) => k.trim())
-      .filter(Boolean);
-    if (!baseKeys.length) return res.status(400).json({ error: { message: '缺少 Google API Key' } });
+      .split(',').map((k: string) => k.trim()).filter(Boolean);
+    if (!baseKeys.length) return res.status(400).json({ error: { message: meta.errorMessages?.missingGoogleKey || '缺少 Google API Key' } });
 
     const imageParts = (image_list || []).map((img: string) => ({
       inlineData: { data: stripBase64(img), mimeType: 'image/png' }
@@ -93,36 +113,20 @@ app.post('/api/generate', async (req, res) => {
         if (func === 'think') {
           const names = (image_names && image_names.length === (image_list || []).length)
             ? image_names : (image_list || []).map((_: any, i: number) => `参考图${i + 1}`);
+          const imageCount = (image_list || []).length;
 
-          const textPrompt = `你是一位顶级的崂山茶展陈设计专家，专注于在大型展览馆内打造崂山茶文化沉浸式空间。
+          // Build user prompt from metadata template
+          const userTpl = meta.prompts?.googleThinkUser || DEFAULT_GOOGLE_THINK_USER;
+          const textPrompt = `${meta.prompts?.googleThinkSystem || DEFAULT_GOOGLE_THINK_SYSTEM}\n\n${
+            userTpl.replace(/\{prompt\}/g, prompt)
+                   .replace(/\{imageCount\}/g, String(imageCount))
+                   .replace(/\{imageNames\}/g, names.join('\n'))
+          }`;
 
-【用户原始需求】
-${prompt}
-
-【参考图片（共 ${(image_list || []).length} 张）】
-${names.join('\n')}
-
-【你的任务】
-深度分析以上 ${(image_list || []).length} 张参考图，生成完整的设计指令：
-
-【优化 Prompt（英文）】
-生成一段详细的英文描述（150-300词），用于输入到图生图 AI。必须包含：
-- 整体空间结构和布局（基于原建筑不变的部分）
-- 精选3-6件核心陈设小品及其精确摆放位置
-- 近景/中景/远景层次安排
-- 灯光设计（射灯、色温3200K-4000K、氛围光）
-- 崂山山海气息的色彩基调（米白、木色、青灰）
-- photorealistic exhibition design rendering, 高清真实感
-
-【中文设计说明】（200字以内）
-简述核心设计思路和小品选择理由。
-
-严格按格式输出。`;
-
-          const body = { contents: { parts: [...imageParts, { text: textPrompt }] } };
           const data: any = await fetchWithTimeout(
             `${baseModelsUrl}/${model}:generateContent?key=${key}`,
-            { method: 'POST', timeout, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+            { method: 'POST', timeout, headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ contents: { parts: [...imageParts, { text: textPrompt }] } }) }
           );
           if (data.error) { lastError = data.error.message || 'Google API 错误'; continue; }
           const raw = data.candidates?.[0]?.content?.parts?.filter((p: any) => p.text)?.map((p: any) => p.text)?.join('') || '';
@@ -131,10 +135,12 @@ ${names.join('\n')}
           return res.json({ optimizedPrompt: pm?.[1]?.trim() || raw, explanation: em?.[1]?.trim() || '' });
 
         } else if (func === 'textToImage') {
+          const conceptTpl = meta.prompts?.textToImageConcept || '设计一个位于大型展馆内的崂山茶文化展位：{prompt}。风格要求：自然、质朴、山海气息，专业展陈效果图，灯光层次丰富。';
+          const textPrompt = conceptTpl.replace(/\{prompt\}/g, prompt);
           const data: any = await fetchWithTimeout(
             `${baseModelsUrl}/${model}:generateContent?key=${key}`,
             { method: 'POST', timeout, headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ contents: { parts: [{ text: prompt }] }, generationConfig: { responseModalities: ['image', 'text'] } }) }
+              body: JSON.stringify({ contents: { parts: [{ text: textPrompt }] }, generationConfig: { responseModalities: ['image', 'text'] } }) }
           );
           if (data.error) { lastError = data.error.message || 'Google API 错误'; continue; }
           let imageUrl = '', textPart = '';
@@ -146,9 +152,8 @@ ${names.join('\n')}
           return res.json({ data: [{ url: imageUrl, revised_prompt: textPart }] });
 
         } else if (func === 'consultant') {
-          const textPrompt = `你是一位专业的展陈设计顾问，专注于在大型展览馆环境下打造崂山茶文化展示空间。
-展会背景：外部是大型展馆（约2000平米，层高15米，人工光为主）。核心空间（图片1）是约100平米的独立展示区，通过隔断、展墙、帘幕等软性界面围合，顶部开放。
-核心任务：1. 空间结构绝对一致性：以图片1为唯一且不可改变的建筑底稿，必须保持原有空间的隔断位置、展墙厚度、入口朝向、空间比例、层高以及视线通廊完全不变。2. 陈设小品精选：从图片2（素材库）中精选最适合崂山茶文化气质（自然、质朴、山海气息）的3-6件核心小品。3. 展会适配布局：将选定的小品精准置入图片1的既有空间内，主要陈设面向主入口。隔断/展墙作为展示载体。考虑灯光层次。预留观众驻留与体验动线。4. 视觉层次：确保近景（体验桌椅）、中景（展示主体）、远景（背景隔断）三层关系分明。5. 输出品质：输出一张完整、具有专业展陈质感的展示效果图，光影真实，色调温润。6. 附上简要设计说明（不超过200字），包括选用了哪些核心小品、布置位置与功能角色、以及如何营造崂山茶的独特场域感。`;
+          const systemPrompt = meta.prompts?.googleConsultantSystem || DEFAULT_GOOGLE_CONSULTANT_SYSTEM;
+          const textPrompt = systemPrompt;
           const data: any = await fetchWithTimeout(
             `${baseModelsUrl}/${model}:generateContent?key=${key}`,
             { method: 'POST', timeout, headers: { 'Content-Type': 'application/json' },
@@ -164,9 +169,8 @@ ${names.join('\n')}
           return res.json({ data: [{ url: imageUrl, revised_prompt: textPart }] });
 
         } else if (func === 'reedit') {
-          const textPrompt2 = maskImage
-            ? `请对提供的图片进行局部修改。第一张是原始设计，第二张是遮罩（白色=需修改区域）。修改要求：${prompt}。仅修改遮罩区域，输出完整效果图。`
-            : prompt;
+          const reeditTpl = meta.prompts?.googleReeditInstruction || '请对提供的图片进行局部修改。第一张是原始设计，第二张是遮罩（白色=需修改区域）。修改要求：{prompt}。仅修改遮罩区域，输出完整效果图。';
+          const textPrompt2 = reeditTpl.replace(/\{prompt\}/g, prompt);
           const data: any = await fetchWithTimeout(
             `${baseModelsUrl}/${model}:generateContent?key=${key}`,
             { method: 'POST', timeout, headers: { 'Content-Type': 'application/json' },
@@ -185,13 +189,14 @@ ${names.join('\n')}
         continue;
       }
     }
-    console.error(`[/api/generate google/${func}] all keys failed:`, lastError);
-    return res.status(500).json({ error: { message: `所有 Google API Key 均失败: ${lastError}` } });
+    const errTpl = meta.errorMessages?.allKeysFailed || '所有 Google API Key 均失败: {reason}';
+    return res.status(500).json({ error: { message: errTpl.replace(/\{reason\}/g, lastError) } });
 
   } else {
+    // Hunyuan
     const id = secretId || process.env.TENCENT_SECRET_ID || '';
     const key = secretKey || process.env.TENCENT_SECRET_KEY || '';
-    if (!id || !key) return res.status(400).json({ error: { message: '缺少腾讯云 SecretId 或 SecretKey' } });
+    if (!id || !key) return res.status(400).json({ error: { message: meta.errorMessages?.missingTencentKey || '缺少腾讯云 SecretId 或 SecretKey' } });
 
     let resolution = "1024:1024";
     if (size && typeof size === 'string' && size.includes('x')) resolution = size.replace('x', ':');
@@ -209,8 +214,8 @@ ${names.join('\n')}
 
         const analysisResults: string[] = [];
         const prompts = [
-          "请详细描述这张图片的主体内容、建筑结构特征、布局方式、色彩风格和空间氛围。输出中文描述。",
-          "请识别这张图片中的陈设物品，包括茶具、屏风、盆景、灯具、座椅等，指出具体形态和位置。"
+          meta.prompts?.hunyuanAnalysisPrompt1 || '请详细描述这张图片的主体内容、建筑结构特征、布局方式、色彩风格和空间氛围。输出中文描述。',
+          meta.prompts?.hunyuanAnalysisPrompt2 || '请识别这张图片中的陈设物品，包括茶具、屏风、盆景、灯具、座椅等，指出具体形态和位置。'
         ];
 
         for (let i = 0; i < (image_list || []).length; i++) {
@@ -229,14 +234,11 @@ ${names.join('\n')}
           }
         }
 
-        const synthesis = `你是一位顶级崂山茶展陈设计专家。请根据以下分析生成设计指令。
-
-【用户需求】${prompt}
-${analysisResults.join('\n')}
-
-【输出要求】
-【优化 Prompt（英文）】（包含空间结构、小品选择、布局、灯光、色调、风格等细节，用于图生图）
-【中文设计说明】（200字以内，简述设计思路）`;
+        const synthesisTpl = meta.prompts?.hunyuanSynthesisInstruction
+          || '你是一位顶级崂山茶展陈设计专家。请根据以下分析生成设计指令。\n\n【用户需求】{prompt}\n{analysisResults}\n\n【输出要求】\n【优化 Prompt（英文）】（包含空间结构、小品选择、布局、灯光、色调、风格等细节，用于图生图）\n【中文设计说明】（200字以内，简述设计思路）';
+        const synthesis = synthesisTpl
+          .replace(/\{prompt\}/g, prompt)
+          .replace(/\{analysisResults\}/g, analysisResults.join('\n'));
 
         try {
           const textR: any = await hClient.ImageQuestion({
@@ -262,12 +264,8 @@ ${analysisResults.join('\n')}
           Revise: 1,
           LogoAdd: 0
         };
-        if (!hasImages) {
-          params.Resolution = resolution;
-        }
-        if (hasImages) {
-          params.Images = image_list.map((img: string) => stripBase64(img));
-        }
+        if (!hasImages) { params.Resolution = resolution; }
+        if (hasImages) { params.Images = image_list.map((img: string) => stripBase64(img)); }
 
         const submitRes = await client.SubmitTextToImageJob(params);
         const jobId = submitRes.JobId;
@@ -276,9 +274,9 @@ ${analysisResults.join('\n')}
           await sleep(2000);
           const q = await client.QueryTextToImageJob({ JobId: jobId });
           if (q.JobStatusCode === "5") { resultUrl = q.ResultImage?.[0] || ""; revisedPrompt = q.RevisedPrompt?.[0] || ""; break; }
-          if (q.JobStatusCode === "4") throw new Error(`生成失败: ${q.JobErrorMsg}`);
+          if (q.JobStatusCode === "4") throw new Error((meta.errorMessages?.jobFailed || '生成失败: {reason}').replace(/\{reason\}/g, q.JobErrorMsg || '未知错误'));
         }
-        if (!resultUrl) throw new Error("任务超时");
+        if (!resultUrl) throw new Error(meta.errorMessages?.jobTimeout || '任务超时');
         return res.json({ data: [{ url: resultUrl, revised_prompt: revisedPrompt }] });
       }
     } catch (err: any) {
@@ -294,5 +292,35 @@ app.listen(PORT, () => {
   console.log(`  POST /api/generate`);
   console.log(`  GET  /api/config`);
   console.log(`  POST /api/save-config`);
+  console.log(`  GET  /api/metadata`);
+  console.log(`  POST /api/save-prompt`);
   console.log(`========================================\n`);
 });
+
+// Default prompt fallbacks (used when metadata.json is unavailable)
+const DEFAULT_GOOGLE_THINK_SYSTEM = '你是一位顶级的崂山茶展陈设计专家，专注于在大型展览馆内打造崂山茶文化沉浸式空间。';
+const DEFAULT_GOOGLE_THINK_USER = `【用户原始需求】
+{prompt}
+
+【参考图片（共 {imageCount} 张）】
+{imageNames}
+
+【你的任务】
+深度分析以上 {imageCount} 张参考图，生成完整的设计指令。
+
+【优化 Prompt（英文）】
+生成一段详细的英文描述（150-300词），用于输入到图生图 AI。必须包含：
+- 整体空间结构和布局（基于原建筑不变的部分）
+- 精选3-6件核心陈设小品及其精确摆放位置
+- 近景/中景/远景层次安排
+- 灯光设计（射灯、色温3200K-4000K、氛围光）
+- 崂山山海气息的色彩基调（米白、木色、青灰）
+- photorealistic exhibition design rendering, 高清真实感
+
+【中文设计说明】（200字以内）
+简述核心设计思路和小品选择理由。
+
+严格按格式输出。`;
+const DEFAULT_GOOGLE_CONSULTANT_SYSTEM = `你是一位专业的展陈设计顾问，专注于在大型展览馆环境下打造崂山茶文化展示空间。
+展会背景：外部是大型展馆（约2000平米，层高15米，人工光为主）。核心空间（图片1）是约100平米的独立展示区，通过隔断、展墙、帘幕等软性界面围合，顶部开放。
+核心任务：1. 空间结构绝对一致性：以图片1为唯一且不可改变的建筑底稿，必须保持原有空间的隔断位置、展墙厚度、入口朝向、空间比例、层高以及视线通廊完全不变。2. 陈设小品精选：从图片2（素材库）中精选最适合崂山茶文化气质（自然、质朴、山海气息）的3-6件核心小品。3. 展会适配布局：将选定的小品精准置入图片1的既有空间内，主要陈设面向主入口。隔断/展墙作为展示载体。考虑灯光层次。预留观众驻留与体验动线。4. 视觉层次：确保近景（体验桌椅）、中景（展示主体）、远景（背景隔断）三层关系分明。5. 输出品质：输出一张完整、具有专业展陈质感的展示效果图，光影真实，色调温润。6. 附上简要设计说明（不超过200字），包括选用了哪些核心小品、布置位置与功能角色、以及如何营造崂山茶的独特场域感。`;

@@ -22,8 +22,8 @@ declare global { interface Window {
 }}
 
 const env = {
-  siteTitle: siteConfig.siteTitle,
-  siteSubtitle: siteConfig.siteSubtitle,
+  siteTitle: (metadata as any)?.siteTitle || '崂山茶展陈顾问',
+  siteSubtitle: (metadata as any)?.siteSubtitle || 'Laoshan Tea Exhibition Design',
   frontendPort: window.__FRONTEND_PORT__ || '3000',
   secretId: window.__SECRET_ID__ || '',
   secretKey: window.__SECRET_KEY__ || '',
@@ -171,19 +171,24 @@ export default function App() {
   const [secretId, setSecretId] = useState(env.secretId);
   const [secretKey, setSecretKey] = useState(env.secretKey);
   const [apiKeys, setApiKeys] = useState<string[]>([]);
+  const [metadata, setMetadata] = useState<any>({});
 
-  // 初始化：从后端加载已保存的配置
+  // 初始化：从后端加载已保存的配置 + metadata（所有文字配置）
   useEffect(() => {
-    fetch('/api/config')
-      .then(r => r.json())
-      .then(cfg => {
-        if (cfg.secretId) setSecretId(cfg.secretId);
-        if (cfg.secretKey) setSecretKey(cfg.secretKey);
-        if (cfg.apiKeys && Array.isArray(cfg.apiKeys)) setApiKeys(cfg.apiKeys);
-        if (cfg.modelMap) setModelMap(cfg.modelMap);
-        if (typeof cfg.autoMode === 'boolean') setAutoMode(cfg.autoMode);
-      })
-      .catch(() => { /* ignore */ });
+    Promise.all([
+      fetch('/api/config').then(r => r.json()).catch(() => ({})),
+      fetch('/api/metadata').then(r => r.json()).catch(() => ({})),
+    ]).then(([cfg, meta]) => {
+      setMetadata(meta);
+      if (cfg.secretId) setSecretId(cfg.secretId);
+      if (cfg.secretKey) setSecretKey(cfg.secretKey);
+      if (cfg.apiKeys && Array.isArray(cfg.apiKeys)) setApiKeys(cfg.apiKeys);
+      if (cfg.modelMap) setModelMap(cfg.modelMap);
+      if (typeof cfg.autoMode === 'boolean') setAutoMode(cfg.autoMode);
+      // consultantPrompt 初始化：优先读 metadata，再读 localStorage
+      const defaultPrompt = meta?.prompts?.defaultConsultant || localStorage.getItem('defaultConsultantPrompt') || meta?.prompts?.defaultConsultant || '';
+      if (defaultPrompt) setConsultantPrompt(defaultPrompt);
+    });
   }, []);
   const [modelMap, setModelMap] = useState<Record<FuncKey, string>>({
     textToImage: FUNCTIONS.textToImage.default,
@@ -357,13 +362,16 @@ export default function App() {
     if (!prompt) return;
     setIsGenerating(true); setError(null);
     try {
+      const conceptPromptTpl = (metadata as any)?.prompts?.textToImageConcept || '设计一个位于大型展馆内的崂山茶文化展位：{prompt}。风格要求：自然、质朴、山海气息，专业展陈效果图，灯光层次丰富。';
+      const finalPrompt = conceptPromptTpl.replace(/\{prompt\}/g, prompt);
       const data = await callGenerate('textToImage', {
-        prompt: `设计一个位于大型展馆内的崂山茶文化展位：${prompt}。风格要求：自然、质朴、山海气息，专业展陈效果图，灯光层次丰富。`,
+        prompt: finalPrompt,
         size: imageSize,
       });
       const imageUrl = data.data?.[0]?.url || (data.data?.[0]?.b64_json ? `data:image/png;base64,${data.data[0].b64_json}` : null);
       if (!imageUrl) throw new Error("未返回有效图像");
-      setResult({ imageUrl, explanation: `基于您的灵感："${prompt}" 生成的崂山茶空间构想。` });
+      const resultTpl = (metadata as any)?.result?.generatedFrom || '基于您的灵感：{prompt} 生成的崂山茶空间构想。';
+      setResult({ imageUrl, explanation: resultTpl.replace(/\{prompt\}/g, prompt) });
     } catch (err: any) { setError(err.message); }
     finally { setIsGenerating(false); }
   };
@@ -409,7 +417,7 @@ export default function App() {
             <section>
               <div className="flex items-center gap-2 mb-6">
                 <div className="w-1 h-6 bg-stone-900 rounded-full" />
-                <h2 className="text-lg font-serif font-bold">{activeTab === 'consultant' ? '上传设计素材' : '描述您的灵感'}</h2>
+                <h2 className="text-lg font-serif font-bold">{activeTab === 'consultant' ? ((metadata as any)?.tabs?.consultant || '上传设计素材') : ((metadata as any)?.tabs?.generator || '描述您的灵感')}</h2>
               </div>
 
               {activeTab === 'consultant' ? (
@@ -448,13 +456,19 @@ export default function App() {
                       <label className="text-[11px] uppercase tracking-wider font-bold text-stone-500">设计指令 Prompt</label>
                       <div className="flex gap-2">
                         <button onClick={() => {
+                          fetch('/api/save-prompt', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ defaultConsultantPrompt: consultantPrompt }),
+                          }).catch(() => {});
                           localStorage.setItem('defaultConsultantPrompt', consultantPrompt);
+                          alert((metadata as any)?.prompt?.setDefaultSuccess || '已保存为默认指令');
                         }}
                           className="text-[10px] px-3 py-1 rounded-full bg-emerald-100 text-emerald-600 hover:bg-emerald-200 font-medium transition-all">
                           设为默认
                         </button>
                         <button onClick={() => {
-                          setConsultantPrompt(localStorage.getItem('defaultConsultantPrompt') || siteConfig.defaultConsultantPrompt);
+                          setConsultantPrompt((metadata as any)?.prompts?.defaultConsultant || localStorage.getItem('defaultConsultantPrompt') || '');
                         }}
                           className="text-[10px] px-3 py-1 rounded-full bg-amber-100 text-amber-600 hover:bg-amber-200 font-medium transition-all">
                           恢复默认
@@ -505,7 +519,7 @@ export default function App() {
                           !isFinalGenerating ? "bg-emerald-600 text-white hover:bg-emerald-700 shadow-lg shadow-emerald-200"
                           : "bg-emerald-300 text-white cursor-not-allowed")}>
                         {isFinalGenerating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-                        {isFinalGenerating ? '正在生成效果图...' : '确认生成效果图'}
+                        {isFinalGenerating ? ((metadata as any)?.buttons?.generating || '正在生成效果图...') : ((metadata as any)?.buttons?.confirmGenerate || '确认生成效果图')}
                       </button>
                       <button onClick={() => { setThinkingPhase(false); setOptimizedPrompt(''); setOptimizedExplanation(''); }}
                         className="w-full py-2 text-xs text-stone-400 hover:text-stone-600 text-center">← 重新分析</button>
@@ -546,7 +560,7 @@ export default function App() {
             <section className="p-6 rounded-3xl bg-white border border-stone-100 space-y-4">
               <h3 className="text-sm font-bold flex items-center gap-2"><Info className="w-4 h-4 text-stone-400" />设计原则</h3>
               <ul className="space-y-3">
-                {siteConfig.designPrinciples.map((t, i) => (
+                {((metadata as any)?.designPrinciples || siteConfig.designPrinciples).map((t: string, i: number) => (
                   <li key={i} className="flex gap-3 text-xs text-stone-500 leading-relaxed"><span className="text-stone-300 font-serif italic">0{i+1}</span>{t}</li>
                 ))}
               </ul>
@@ -583,8 +597,8 @@ export default function App() {
                     <div className="absolute inset-0 flex items-center justify-center"><div className="w-2 h-2 bg-stone-900 rounded-full animate-pulse" /></div>
                   </div>
                   <div>
-                    <p className="text-lg font-serif font-bold text-stone-600">正在为您构思...</p>
-                    <p className="text-sm text-stone-400 mt-2">正在生成崂山茶展陈效果图</p>
+                    <p className="text-lg font-serif font-bold text-stone-600">{(metadata as any)?.loading?.title || '正在为您构思...'}</p>
+                    <p className="text-sm text-stone-400 mt-2">{(metadata as any)?.loading?.subtitle || '正在生成崂山茶展陈效果图'}</p>
                   </div>
                 </motion.div>
               )}
@@ -632,7 +646,7 @@ export default function App() {
                         <button onClick={handleReEdit} disabled={!editPrompt || isFinalGenerating}
                           className="flex-[2] py-3 rounded-xl bg-emerald-600 text-white font-bold text-xs flex items-center justify-center gap-2 hover:bg-emerald-700">
                           {isFinalGenerating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
-                          {isFinalGenerating ? '生成中...' : '执行局部重绘'}
+                          {isFinalGenerating ? '生成中...' : ((metadata as any)?.buttons?.reEdit || '执行局部重绘')}
                         </button>
                       </div>
                     </motion.div>
@@ -652,8 +666,8 @@ export default function App() {
                 <motion.div key="empty" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
                   className="aspect-[16/10] rounded-3xl border-2 border-dashed border-stone-200 flex flex-col items-center justify-center p-12 text-center">
                   <div className="w-20 h-20 rounded-full bg-stone-50 flex items-center justify-center mb-6"><Palette className="w-10 h-10 text-stone-200" /></div>
-                  <h3 className="text-xl font-serif font-bold text-stone-400">{siteConfig.emptyTitle}</h3>
-                  <p className="text-sm text-stone-400 mt-2 max-w-xs">{siteConfig.emptyDesc}</p>
+                  <h3 className="text-xl font-serif font-bold text-stone-400">{(metadata as any)?.empty?.title || siteConfig.emptyTitle}</h3>
+                  <p className="text-sm text-stone-400 mt-2 max-w-xs">{(metadata as any)?.empty?.description || siteConfig.emptyDesc}</p>
                 </motion.div>
               )}
             </AnimatePresence>
@@ -683,18 +697,18 @@ export default function App() {
 
                 {/* 密钥 */}
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1.5"><label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">腾讯 SecretId</label>
+                  <div className="space-y-1.5"><label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">{(metadata as any)?.labels?.secretId || '腾讯 SecretId'}</label>
                     <input type="text" value={secretId} onChange={(e) => setSecretId(e.target.value)}
                       className="w-full px-4 py-2.5 rounded-xl bg-stone-50 border border-stone-200 focus:border-stone-400 outline-none text-sm font-mono" /></div>
-                  <div className="space-y-1.5"><label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">腾讯 SecretKey</label>
+                  <div className="space-y-1.5"><label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">{(metadata as any)?.labels?.secretKey || '腾讯 SecretKey'}</label>
                     <input type="password" value={secretKey} onChange={(e) => setSecretKey(e.target.value)}
                       className="w-full px-4 py-2.5 rounded-xl bg-stone-50 border border-stone-200 focus:border-stone-400 outline-none text-sm font-mono" /></div>
                 </div>
                 <div className="space-y-1.5">
-                  <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">Google API Keys<span className="ml-1 text-amber-500 font-normal">(多key逗号分隔，自动切换)</span></label>
+                  <label className="text-[10px] uppercase tracking-widest font-bold text-stone-400">Google API Keys<span className="ml-1 text-amber-500 font-normal">({(metadata as any)?.placeholders?.googleApiKeysHint || '多key逗号分隔，自动切换'})</span></label>
                   <textarea value={apiKeys.join(', ')} onChange={(e) => setApiKeys(e.target.value.split(',').map(k => k.trim()).filter(Boolean))}
                     className="w-full px-4 py-2.5 rounded-xl bg-stone-50 border border-stone-200 focus:border-stone-400 outline-none text-sm font-mono resize-none" rows={2}
-                    placeholder="key1, key2, key3..." />
+                    placeholder={(metadata as any)?.placeholders?.googleApiKeys || 'key1, key2, key3...'} />
                 </div>
 
                 {/* 4 个功能独立选模型 */}
@@ -758,10 +772,10 @@ export default function App() {
 
       <footer className="py-12 border-t border-stone-200 mt-12">
         <div className="max-w-6xl mx-auto px-6 flex flex-col md:flex-row items-center justify-between gap-6">
-          <div className="text-xs text-stone-400 font-medium">{siteConfig.footer.copyright}</div>
+          <div className="text-xs text-stone-400 font-medium">{(metadata as any)?.footer?.copyright || '© 2026 崂山茶展陈顾问 · 沉浸式设计系统'}</div>
           <div className="flex gap-8">
-            {siteConfig.footer.links.map((l, i) => (
-              <a key={i} href={l.href} className="text-[10px] uppercase tracking-widest font-bold text-stone-400 hover:text-stone-900">{l.label}</a>
+            {((metadata as any)?.footer?.links || siteConfig.footer.links).map((l: any, i: number) => (
+              <a key={i} href={l.href || '#'} className="text-[10px] uppercase tracking-widest font-bold text-stone-400 hover:text-stone-900">{l.label}</a>
             ))}
           </div>
         </div>
