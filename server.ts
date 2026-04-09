@@ -130,7 +130,7 @@ ${names.join('\n')}
           const em = raw.match(/【中文设计说明】\s*([\s\S]*?)$/i);
           return res.json({ optimizedPrompt: pm?.[1]?.trim() || raw, explanation: em?.[1]?.trim() || '' });
 
-        } else if (func === 't2i') {
+        } else if (func === 'textToImage') {
           const data: any = await fetchWithTimeout(
             `${baseModelsUrl}/${model}:generateContent?key=${key}`,
             { method: 'POST', timeout, headers: { 'Content-Type': 'application/json' },
