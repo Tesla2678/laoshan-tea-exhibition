@@ -26,34 +26,31 @@ for /f "delims=[] tokens=2" %%a in ('ping -4 -n 1 %COMPUTERNAME% ^| findstr /r "
 )
 if not defined LAN_IP set LAN_IP=127.0.0.1
 
-echo [INFO] Detected LAN IP: %LAN_IP%
+echo [INFO] LAN IP: %LAN_IP%
 echo.
 
-:: Start backend
-echo [1/2] Starting backend (port 3001) ...
-start /b cmd /c "npm run server > server.log 2>&1"
-
-:: Wait for backend to be ready
-timeout /t 3 /nobreak >nul
-
-:: Start frontend
-echo [2/2] Starting frontend (port 3000) ...
-start /b cmd /c "npm run dev > dev.log 2>&1"
-
-:: Wait for frontend to be ready
-timeout /t 4 /nobreak >nul
-
-:: Auto-open browser with LAN IP
+:: Start backend and frontend in background using npm-run-all
+echo [OK] Starting backend (port 3001) and frontend (port 3000)...
 echo.
+start /b cmd /c "npm run start > start.log 2>&1"
+
+:: Wait for services to be ready
+echo [INFO] Waiting for services to start...
+timeout /t 5 /nobreak >nul
+
+:: Auto-open browser
 echo [OK] Launching browser...
 start http://%LAN_IP%:3000
 
 echo.
 echo ==========================================
-echo   Started!
+echo   Laoshan Tea Exhibition - Started!
+echo.
 echo   Local:    http://localhost:3000
 echo   LAN:      http://%LAN_IP%:3000
 echo   Backend:  http://localhost:3001
+echo.
+echo   Logs:     start.log  (in project folder)
 echo   Close this window to stop all services
 echo ==========================================
 echo.
