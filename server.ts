@@ -236,13 +236,17 @@ ${analysisResults.join('\n')}
           profile: { httpProfile: { endpoint: "aiart.tencentcloudapi.com" } }
         });
 
+        const hasImages = Array.isArray(image_list) && image_list.length > 0;
         const params: any = {
           Prompt: prompt,
-          Resolution: resolution,
           Revise: 1,
           LogoAdd: 0
         };
-        if (image_list && Array.isArray(image_list) && image_list.length > 0) {
+        // 文生图：传分辨率；图生图（有多张参考图）：不传 Resolution，让 API 自动适配
+        if (!hasImages) {
+          params.Resolution = resolution;
+        }
+        if (hasImages) {
           params.Images = image_list.map((img: string) => stripBase64(img));
         }
 
