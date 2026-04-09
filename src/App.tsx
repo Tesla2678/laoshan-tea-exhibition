@@ -256,7 +256,7 @@ export default function App() {
   }, []);
 
   const callGenerate = async (func: FuncKey, extra: Record<string, any> = {}) => {
-    const model = modelMap[func];
+    const model = modelMap[func] && modelMap[func] !== 'undefined' ? modelMap[func] : FUNCTIONS[func]?.default || '';
     const res = await fetch('/api/generate', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ func, model, secretId, secretKey, apiKey: apiKeys.join(','), ...extra })
