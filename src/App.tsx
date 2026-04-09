@@ -22,8 +22,8 @@ declare global { interface Window {
 }}
 
 const env = {
-  siteTitle: (metadata as any)?.siteTitle || '崂山茶展陈顾问',
-  siteSubtitle: (metadata as any)?.siteSubtitle || 'Laoshan Tea Exhibition Design',
+  siteTitle: '崂山茶展陈顾问',
+  siteSubtitle: 'Laoshan Tea Exhibition Design',
   frontendPort: window.__FRONTEND_PORT__ || '3000',
   secretId: window.__SECRET_ID__ || '',
   secretKey: window.__SECRET_KEY__ || '',
