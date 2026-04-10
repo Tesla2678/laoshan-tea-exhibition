@@ -200,6 +200,7 @@ export default function App() {
 
   const [structureImages, setStructureImages] = useState<RefImage[]>([]);
   const [referenceImages, setReferenceImages] = useState<RefImage[]>([]);
+  const [isDeepAnalyzing, setIsDeepAnalyzing] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [result, setResult] = useState<DesignResult | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -278,6 +279,7 @@ export default function App() {
   // Step 1: 思考
   const handleStartThinking = async () => {
     if (structureImages.length < 1) return;
+    setIsDeepAnalyzing(true);
     setIsGenerating(true); setThinkingPhase(true);
     setError(null); setOptimizedPrompt(''); setOptimizedExplanation('');
 
@@ -308,7 +310,7 @@ export default function App() {
       }
       // 非自动模式：停在优化结果页面，等待用户确认
     } catch (err: any) { setError(err.message); setThinkingPhase(false); }
-    finally { setIsGenerating(false); }
+    finally { setIsDeepAnalyzing(false); setIsGenerating(false); }
   };
 
 
@@ -491,12 +493,12 @@ export default function App() {
                   </div>
 
                   {!isGenerating && !thinkingPhase && (
-                    <button onClick={handleStartThinking} disabled={structureImages.length < 1 || isGenerating}
+                    <button onClick={handleStartThinking} disabled={structureImages.length < 1 || isGenerating || isDeepAnalyzing}
                       className={cn("w-full py-4 rounded-2xl font-bold flex items-center justify-center gap-2 transition-all",
-                        structureImages.length >= 1 && !isGenerating ? "bg-stone-900 text-white hover:bg-stone-800 shadow-lg shadow-stone-200"
+                        structureImages.length >= 1 && !isGenerating && !isDeepAnalyzing ? "bg-stone-900 text-white hover:bg-stone-800 shadow-lg shadow-stone-200"
                         : "bg-stone-200 text-stone-400 cursor-not-allowed")}>
-                      {isGenerating ? <Loader2 className="w-5 h-5 animate-spin" /> : <Brain className="w-5 h-5" />}
-                      AI 深度分析 + 优化设计指令
+                      {isDeepAnalyzing ? <Loader2 className="w-5 h-5 animate-spin" /> : <Brain className="w-5 h-5" />}
+                      {isDeepAnalyzing ? "深度分析进行中..." : "AI 深度分析 + 优化设计指令"}
                     </button>)
                   }
 
