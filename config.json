@@ -1,9 +1,7 @@
 {
-  "secretId": "AKIDGWimopoocEetxqX3QbZLxNcOziNDwgR4",
-  "secretKey": "Yt1xgFdpqgLn25yfGf3FF3gEbnndHhvz",
+  "secretId": "",
+  "secretKey": "",
   "apiKeys": [
-    "AIzaSyDnICh0DAaYqbOf6HQnFHaeLttO4mbcPww",
-    "AIzaSyAZ_bYiu2yP7oFzMZT7AeAGr6w8Xqdn1Wg"
   ],
   "modelMap": {
     "textToImage": "gemini-3-pro-image-preview",
